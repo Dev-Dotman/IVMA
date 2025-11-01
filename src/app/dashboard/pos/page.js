@@ -3,7 +3,10 @@ import { useState, useEffect } from "react";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import ReceiptModal from "@/components/dashboard/ReceiptModal";
 import CreateStoreModal from "@/components/dashboard/CreateStoreModal";
+import DeliveryScheduleModal from "@/components/dashboard/DeliveryScheduleModal";
 import { useAuth } from "@/contexts/AuthContext";
+import { useRouter } from "next/navigation";
+import useOrderProcessingStore from "@/store/orderProcessingStore";
 import { 
   Search, 
   Plus, 
@@ -18,11 +21,12 @@ import {
   ShoppingCart,
   Package,
   Scan,
-  Store
+  Store,
+  CheckCircle, 
+  AlertCircle, 
+  ArrowLeft, 
+  FileText
 } from "lucide-react";
-import { useRouter } from "next/navigation";
-import useOrderProcessingStore from "@/store/orderProcessingStore";
-import { CheckCircle, AlertCircle, ArrowLeft, FileText } from "lucide-react";
 
 export default function POSPage() {
   const { secureApiCall } = useAuth();
@@ -57,6 +61,9 @@ export default function POSPage() {
   const [hasStore, setHasStore] = useState(null); // null = loading, true = has store, false = no store
   const [store, setStore] = useState(null);
   const [isCreateStoreModalOpen, setIsCreateStoreModalOpen] = useState(false);
+  const [isDeliveryPromptOpen, setIsDeliveryPromptOpen] = useState(false);
+  const [isDeliveryModalOpen, setIsDeliveryModalOpen] = useState(false);
+  const [pendingSaleForDelivery, setPendingSaleForDelivery] = useState(null);
 
   // Check if user has a store
   const checkUserStore = async () => {
@@ -87,8 +94,23 @@ export default function POSPage() {
         const activeItems = response.data.filter(item => 
           item.status === 'Active' && item.quantityInStock > 0
         );
-        setInventoryItems(activeItems);
-        setFilteredItems(activeItems);
+        
+        // Use the enhanced batch pricing if available
+        const itemsWithBatchPricing = activeItems.map(item => ({
+          ...item,
+          // Use current batch pricing if available, otherwise fall back to item pricing
+          sellingPrice: item.currentSellingPrice || item.sellingPrice,
+          costPrice: item.currentCostPrice || item.costPrice,
+          // Keep original prices for reference
+          originalSellingPrice: item.sellingPrice,
+          originalCostPrice: item.costPrice,
+          // Add batch info for display
+          hasBatchPricing: !!(item.currentSellingPrice && item.currentCostPrice),
+          batchPricing: item.batchPricing || null
+        }));
+        
+        setInventoryItems(itemsWithBatchPricing);
+        setFilteredItems(itemsWithBatchPricing);
       }
     } catch (error) {
       console.error('Error fetching inventory:', error);
@@ -205,7 +227,62 @@ export default function POSPage() {
     }).format(amount);
   };
 
-  // Process sale - updated with receipt modal and order processing
+  // Handle delivery scheduling
+  const handleScheduleDelivery = async (deliveryData) => {
+    try {
+      const response = await secureApiCall('/api/deliveries', {
+        method: 'POST',
+        body: JSON.stringify({
+          saleId: pendingSaleForDelivery._id,
+          transactionId: pendingSaleForDelivery.transactionId,
+          orderId: pendingSaleForDelivery.linkedOrderId || null,
+          deliveryType: pendingSaleForDelivery.isFromOrder ? 'order' : 'pos_sale',
+          ...deliveryData
+        })
+      });
+
+      if (response.success) {
+        alert('Delivery scheduled successfully!');
+        setIsDeliveryModalOpen(false);
+        setPendingSaleForDelivery(null);
+        // Open receipt modal after scheduling delivery
+        setIsReceiptModalOpen(true);
+      } else {
+        throw new Error(response.message);
+      }
+    } catch (error) {
+      console.error('Error scheduling delivery:', error);
+      alert('Error scheduling delivery: ' + error.message);
+    }
+  };
+
+  // Skip delivery scheduling
+  const handleSkipDelivery = () => {
+    setIsDeliveryPromptOpen(false);
+    setPendingSaleForDelivery(null);
+    // Open receipt modal directly
+    setIsReceiptModalOpen(true);
+  };
+
+  // Add the missing calculateNewStock function
+  const calculateNewStock = () => {
+    // This function should calculate new stock based on current cart
+    // Return current totals for display purposes
+    return {
+      subtotal: cart.reduce((sum, item) => sum + (item.sellingPrice * item.quantity), 0),
+      total: cart.reduce((sum, item) => sum + (item.sellingPrice * item.quantity), 0),
+      itemCount: cart.length
+    };
+  };
+
+  // Add missing getSelectedBatchInfo function if needed
+  const getSelectedBatchInfo = () => {
+    // This would return batch information if using batch system
+    // For now, return null as POS doesn't use batch selection
+    return null;
+  };
+
+  // Process sale - updated with delivery prompt
   const processSale = async () => {
     if (!isProcessingOrder) {
       // Regular POS sale - SHOULD deduct inventory
@@ -280,13 +357,13 @@ export default function POSPage() {
           };
           
           setCompletedSale(completedSaleData);
+          setPendingSaleForDelivery(completedSaleData);
           
           // Clear cart
           clearCart();
           
-          // Show success alert and then open receipt modal
-          alert(`Sale completed successfully! Transaction ID: ${response.data.transactionId}`);
-          setIsReceiptModalOpen(true);
+          // Show delivery prompt instead of receipt modal immediately
+          setIsDeliveryPromptOpen(true);
           
         } else {
           alert('Failed to process sale: ' + response.message);
@@ -368,9 +445,9 @@ export default function POSPage() {
       if (saleResponse.success) {
         console.log('Order sale response:', saleResponse);
         
-        // Update the order status to 'delivered' since it's been processed and sold
+        // Update the order status to 'processed' since it's been processed and sold
         const statusUpdateData = {
-          status: 'delivered',
+          status: 'processed',
           note: `Order processed through POS. Sale transaction: ${saleResponse.data.transactionId}`,
           updatedBy: 'admin'
         };
@@ -398,13 +475,13 @@ export default function POSPage() {
           };
           
           setCompletedSale(completedSaleData);
+          setPendingSaleForDelivery(completedSaleData);
           
           // Clear cart
           clearCart();
           
-          // Show success alert and then open receipt modal
-          alert(`Order #${completedOrder.orderNumber} processed successfully! Transaction ID: ${saleResponse.data.transactionId}`);
-          setIsReceiptModalOpen(true);
+          // For orders, prompt for delivery scheduling (many orders need delivery)
+          setIsDeliveryPromptOpen(true);
         } else {
           throw new Error('Failed to update order status');
         }
@@ -562,9 +639,16 @@ export default function POSPage() {
               {filteredItems.map(item => (
                 <div
                   key={item._id}
-                  className="border border-gray-200 rounded-xl p-4 hover:border-teal-500 hover:shadow-md transition-all cursor-pointer"
+                  className="border border-gray-200 rounded-xl p-4 hover:border-teal-500 hover:shadow-md transition-all cursor-pointer relative"
                   onClick={() => addToCart(item)}
                 >
+                  {/* Batch indicator */}
+                  {item.hasBatchPricing && (
+                    <div className="absolute top-2 right-2 bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full font-medium">
+                      Batch
+                    </div>
+                  )}
+                  
                   <div className="aspect-square bg-gray-100 rounded-lg mb-3 flex items-center justify-center">
                     {item.image ? (
                       <img
@@ -578,10 +662,26 @@ export default function POSPage() {
                   </div>
                   <h4 className="font-medium text-gray-900 text-sm mb-1 truncate">{item.productName}</h4>
                   <p className="text-xs text-gray-500 mb-2">{item.sku}</p>
+                  
+                  {/* Show batch code if available */}
+                  {item.batchPricing?.activeBatchCode && (
+                    <p className="text-xs text-green-600 mb-2">
+                      {item.batchPricing.activeBatchCode}
+                    </p>
+                  )}
+                  
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-bold text-teal-600">
-                      {formatCurrency(item.sellingPrice)}
-                    </span>
+                    <div className="flex flex-col">
+                      <span className="text-sm font-bold text-teal-600">
+                        {formatCurrency(item.sellingPrice)}
+                      </span>
+                      {/* Show if price is from batch vs original */}
+                      {item.hasBatchPricing && item.sellingPrice !== item.originalSellingPrice && (
+                        <span className="text-xs text-gray-400 line-through">
+                          {formatCurrency(item.originalSellingPrice)}
+                        </span>
+                      )}
+                    </div>
                     <span className="text-xs text-gray-500">
                       Stock: {item.quantityInStock}
                     </span>
@@ -861,7 +961,69 @@ export default function POSPage() {
         onStoreCreated={handleStoreCreated}
       />
 
-      {/* Existing Receipt Modal */}
+      {/* Delivery Prompt Modal */}
+      {isDeliveryPromptOpen && pendingSaleForDelivery && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <CheckCircle className="w-8 h-8 text-green-600" />
+              </div>
+              
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                {pendingSaleForDelivery.isFromOrder ? 'Order Processed!' : 'Sale Completed!'}
+              </h3>
+              
+              <p className="text-gray-600 mb-2">
+                Transaction: {pendingSaleForDelivery.transactionId}
+              </p>
+              
+              {pendingSaleForDelivery.processedOrder && (
+                <p className="text-blue-600 text-sm mb-4">
+                  Order #{pendingSaleForDelivery.processedOrder.orderNumber} processed successfully
+                </p>
+              )}
+              
+              <p className="text-gray-700 mb-6">
+                Would you like to schedule a delivery for this {pendingSaleForDelivery.isFromOrder ? 'order' : 'sale'}?
+              </p>
+              
+              <div className="flex space-x-3">
+                <button
+                  onClick={handleSkipDelivery}
+                  className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors"
+                >
+                  No, Skip
+                </button>
+                <button
+                  onClick={() => {
+                    setIsDeliveryPromptOpen(false);
+                    setIsDeliveryModalOpen(true);
+                  }}
+                  className="flex-1 px-4 py-3 bg-teal-600 text-white rounded-xl hover:bg-teal-700 transition-colors"
+                >
+                  Yes, Schedule
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delivery Schedule Modal */}
+      <DeliveryScheduleModal
+        isOpen={isDeliveryModalOpen}
+        onClose={() => {
+          setIsDeliveryModalOpen(false);
+          setPendingSaleForDelivery(null);
+          // Still show receipt modal if user cancels delivery scheduling
+          setIsReceiptModalOpen(true);
+        }}
+        onSubmit={handleScheduleDelivery}
+        sale={pendingSaleForDelivery}
+      />
+
+      {/* Receipt Modal */}
       <ReceiptModal
         isOpen={isReceiptModalOpen}
         onClose={() => {

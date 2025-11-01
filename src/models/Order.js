@@ -61,7 +61,7 @@ const OrderItemSchema = new mongoose.Schema({
   // Item-level status for multi-vendor orders
   itemStatus: {
     type: String,
-    enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded'],
+    enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded', 'processed'],
     default: 'pending'
   },
   // Item-level tracking
@@ -144,7 +144,7 @@ const OrderSchema = new mongoose.Schema({
   // Order status
   status: {
     type: String,
-    enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded'],
+    enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded', 'processed'],
     default: 'pending',
     index: true
   },

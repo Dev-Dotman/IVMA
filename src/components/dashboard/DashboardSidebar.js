@@ -4,13 +4,14 @@ import { useRouter, usePathname } from "next/navigation";
 import { 
   LayoutDashboard, 
   Package, 
-  CreditCard,  // Changed icon for Sales Terminal
-  Store,       // Store icon (previously used for POS)
+  CreditCard,
+  Store,
   Globe, 
   ShoppingBag, 
   Receipt,
   BarChart3, 
-  Settings 
+  Settings,
+  Truck  // Add Truck icon for deliveries
 } from "lucide-react";
 
 export default function DashboardSidebar() {
@@ -26,6 +27,7 @@ export default function DashboardSidebar() {
     { name: 'Website', icon: Globe, path: '/dashboard/website' },
     { name: 'Orders', icon: ShoppingBag, path: '/dashboard/orders' },
     { name: 'Sales', icon: Receipt, path: '/dashboard/sales' },
+    { name: 'Deliveries', icon: Truck, path: '/dashboard/deliveries' }, // Add deliveries menu item
     { name: 'Reports & Analysis', icon: BarChart3, path: '/dashboard/reports' },
     { name: 'Settings', icon: Settings, path: '/dashboard/settings' },
   ];

@@ -21,7 +21,7 @@ export async function PUT(req, { params }) {
     const { status, note, updatedBy, trackingInfo } = await req.json();
 
     // Validate status
-    const validStatuses = ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded'];
+    const validStatuses = ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded', 'processed'];
     if (!validStatuses.includes(status)) {
       return NextResponse.json(
         { success: false, message: 'Invalid status' },

@@ -84,7 +84,7 @@ export class OrderSaleProcessor {
     }
   }
 
-  static async createSaleForSeller(order, sellerId, items, session, storeInfo) {
+  static async createSaleForSeller(order, sellerId, items, storeInfo, session) {
     // Calculate totals for this seller's items
     const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
     
@@ -100,9 +100,12 @@ export class OrderSaleProcessor {
     // Process each item with batch tracking
     const processedItems = [];
     const itemSales = [];
+    let totalBatchesUsed = 0;
+    let totalCostFromBatches = 0;
+    let totalProfitFromBatches = 0;
 
     for (const orderItem of items) {
-      const processedItem = await this.processOrderItem(
+      const processedItem = await this.processOrderItemWithBatchTracking(
         orderItem, 
         order, 
         sellerId, 
@@ -110,9 +113,16 @@ export class OrderSaleProcessor {
       );
       processedItems.push(processedItem.saleItem);
       itemSales.push(processedItem.itemSale);
+      totalBatchesUsed += processedItem.batchesUsed;
+      totalCostFromBatches += processedItem.totalCost;
+      totalProfitFromBatches += processedItem.totalProfit;
     }
 
-    // Create the main sale record with ALL required fields
+    // Calculate average cost per unit
+    const totalQuantitySold = processedItems.reduce((sum, item) => sum + item.quantity, 0);
+    const averageCostPerUnit = totalQuantitySold > 0 ? totalCostFromBatches / totalQuantitySold : 0;
+
+    // Create the main sale record with ALL required fields including batch summary
     const sale = new Sale({
       userId: new mongoose.Types.ObjectId(sellerId),
       customer: {
@@ -137,7 +147,14 @@ export class OrderSaleProcessor {
       isFromOrder: true,
       linkedOrderId: order._id,
       orderNumber: order.orderNumber,
-      isOrderProcessing: true
+      isOrderProcessing: true,
+      // Add batch summary
+      batchSummary: {
+        totalBatchesUsed,
+        totalCostFromBatches,
+        totalProfitFromBatches,
+        averageCostPerUnit
+      }
     });
 
     await sale.save({ session });
@@ -151,11 +168,11 @@ export class OrderSaleProcessor {
     // Create notification for the seller
     await this.createSaleNotification(sellerId, sale, order, session);
 
-    return { sale, inventoryUpdates };
+    return { sale, inventoryUpdates: [] };
   }
 
-  static async processOrderItem(orderItem, order, sellerId, session) {
-    console.log(`Processing order item: ${orderItem.productSnapshot.productName}`);
+  static async processOrderItemWithBatchTracking(orderItem, order, sellerId, session) {
+    console.log(`Processing order item with batch tracking: ${orderItem.productSnapshot.productName}`);
 
     // Get the inventory item
     const inventoryItem = await Inventory.findById(orderItem.product).session(session);
@@ -163,7 +180,12 @@ export class OrderSaleProcessor {
       throw new Error(`Inventory item not found: ${orderItem.product}`);
     }
 
-    // Check if we have batches for this item
+    // Check if we have enough stock
+    if (inventoryItem.quantityInStock < orderItem.quantity) {
+      throw new Error(`Insufficient stock for ${inventoryItem.productName}. Available: ${inventoryItem.quantityInStock}, Requested: ${orderItem.quantity}`);
+    }
+
+    // Get available batches in FIFO order
     const availableBatches = await InventoryBatch.find({
       productId: orderItem.product,
       userId: new mongoose.Types.ObjectId(sellerId),
@@ -174,10 +196,12 @@ export class OrderSaleProcessor {
     .session(session);
 
     let totalCost = 0;
+    let totalProfit = 0;
+    let batchesUsed = 0;
     const batchesSoldFrom = [];
 
     if (availableBatches.length > 0) {
-      // Process quantity from batches
+      // Process quantity from batches using FIFO
       let remainingQuantity = orderItem.quantity;
 
       for (const batch of availableBatches) {
@@ -185,9 +209,17 @@ export class OrderSaleProcessor {
 
         const quantityFromThisBatch = Math.min(remainingQuantity, batch.quantityRemaining);
         
-        // Update batch
-        await batch.sellFromBatch(quantityFromThisBatch);
+        // Update batch quantities
+        batch.quantitySold += quantityFromThisBatch;
+        batch.quantityRemaining -= quantityFromThisBatch;
         
+        // Update batch status if depleted
+        if (batch.quantityRemaining === 0) {
+          batch.status = 'depleted';
+        }
+        
+        await batch.save({ session });
+
         // Track batch usage
         batchesSoldFrom.push({
           batchId: batch._id,
@@ -196,21 +228,29 @@ export class OrderSaleProcessor {
           costPriceFromBatch: batch.costPrice
         });
 
-        totalCost += quantityFromThisBatch * batch.costPrice;
+        const costFromThisBatch = quantityFromThisBatch * batch.costPrice;
+        const profitFromThisBatch = quantityFromThisBatch * (orderItem.price - batch.costPrice);
+        
+        totalCost += costFromThisBatch;
+        totalProfit += profitFromThisBatch;
+        batchesUsed++;
         remainingQuantity -= quantityFromThisBatch;
       }
 
       if (remainingQuantity > 0) {
-        console.warn(`Insufficient stock in batches for ${inventoryItem.productName}, using fallback cost`);
-        totalCost += remainingQuantity * inventoryItem.costPrice;
+        // Fallback to inventory cost price for remaining quantity
+        const fallbackCost = remainingQuantity * inventoryItem.costPrice;
+        const fallbackProfit = remainingQuantity * (orderItem.price - inventoryItem.costPrice);
+        totalCost += fallbackCost;
+        totalProfit += fallbackProfit;
+        console.warn(`Used fallback pricing for ${remainingQuantity} units of ${inventoryItem.productName}`);
       }
     } else {
-      // No batches found, use inventory cost price
+      // No batches available, use inventory cost price
       totalCost = orderItem.quantity * inventoryItem.costPrice;
+      totalProfit = orderItem.quantity * (orderItem.price - inventoryItem.costPrice);
+      console.warn(`No batches found for ${inventoryItem.productName}, using inventory cost price`);
     }
-
-    // Calculate weighted average cost
-    const weightedAverageCost = totalCost / orderItem.quantity;
 
     // Update inventory quantities
     await inventoryItem.recordSale(orderItem.quantity);
@@ -238,42 +278,82 @@ export class OrderSaleProcessor {
       }
     });
 
-    // Create ItemSale record
-    const itemSale = new ItemSale({
-      userId: new mongoose.Types.ObjectId(sellerId),
-      inventoryId: orderItem.product,
-      batchesSoldFrom: batchesSoldFrom.map(batch => ({
-        batchId: batch.batchId,
-        batchCode: batch.batchCode,
-        quantitySoldFromBatch: batch.quantityFromBatch,
-        unitCostPriceFromBatch: batch.costPriceFromBatch,
-        batchDateReceived: availableBatches.find(b => b._id.equals(batch.batchId))?.dateReceived,
-        batchSupplier: availableBatches.find(b => b._id.equals(batch.batchId))?.supplier || ''
-      })),
-      itemSnapshot: {
-        productName: orderItem.productSnapshot.productName,
-        sku: orderItem.productSnapshot.sku,
-        category: orderItem.productSnapshot.category || 'General',
-        brand: inventoryItem.brand || '',
-        unitOfMeasure: orderItem.productSnapshot.unitOfMeasure || inventoryItem.unitOfMeasure
+    // Create ItemSale record if we have batch data
+    let itemSale = null;
+    if (batchesSoldFrom.length > 0) {
+      itemSale = new ItemSale({
+        userId: new mongoose.Types.ObjectId(sellerId),
+        inventoryId: orderItem.product,
+        batchesSoldFrom: batchesSoldFrom.map(batch => ({
+          batchId: batch.batchId,
+          batchCode: batch.batchCode,
+          quantitySoldFromBatch: batch.quantityFromBatch,
+          unitCostPriceFromBatch: batch.costPriceFromBatch,
+          batchDateReceived: availableBatches.find(b => b._id.equals(batch.batchId))?.dateReceived,
+          batchSupplier: availableBatches.find(b => b._id.equals(batch.batchId))?.supplier || ''
+        })),
+        itemSnapshot: {
+          productName: orderItem.productSnapshot.productName,
+          sku: orderItem.productSnapshot.sku,
+          category: orderItem.productSnapshot.category || 'General',
+          brand: inventoryItem.brand || '',
+          unitOfMeasure: orderItem.productSnapshot.unitOfMeasure || inventoryItem.unitOfMeasure
+        },
+        quantitySold: orderItem.quantity,
+        unitSalePrice: orderItem.price,
+        totalSaleAmount: orderItem.subtotal,
+        unitCostPrice: totalCost / orderItem.quantity,
+        totalCostAmount: totalCost,
+        paymentMethod: this.mapPaymentMethod(order.paymentInfo.method),
+        customer: {
+          name: `${order.customerSnapshot.firstName} ${order.customerSnapshot.lastName}`,
+          phone: order.customerSnapshot.phone || order.shippingAddress.phone || '',
+          email: order.customerSnapshot.email || ''
+        },
+        saleDate: new Date(),
+       
+      saleItem: {
+        inventoryId: orderItem.product,
+        itemSnapshot: itemSale.itemSnapshot,
+        quantity: orderItem.quantity,
+        unitPrice: orderItem.price,
+        totalPrice: orderItem.subtotal,
+        unitCost: weightedAverageCost,
+        totalCost: totalCost,
+        paymentMethod: this.mapPaymentMethod(order.paymentInfo.method),
+        isFromOrder: true,
+        linkedOrderId: order._id,
+        orderNumber: order.orderNumber
       },
-      quantitySold: orderItem.quantity,
-      unitSalePrice: orderItem.price,
-      totalSaleAmount: orderItem.subtotal,
-      unitCostPrice: weightedAverageCost,
-      totalCostAmount: totalCost,
-      paymentMethod: this.mapPaymentMethod(order.paymentInfo.method),
-      customer: {
-        name: `${order.customerSnapshot.firstName} ${order.customerSnapshot.lastName}`,
-        phone: order.customerSnapshot.phone || order.shippingAddress.phone || '',
-        email: order.customerSnapshot.email || ''
-      },
-      saleDate: new Date(),
-      status: 'completed',
+      itemSale,
+      batchesUsed: batchesSoldFrom.length,
+      totalCost,
+      totalProfit: orderItem.subtotal - totalCost
+    });
+  }
+  }
+
+  // static async mapPaymentMethod(method) {
+  //   const methodMap = {
+  //     'credit_card': 'Credit Card',
+  //     'paypal': 'PayPal',
+  //     'bank_transfer': 'Bank Transfer',
+  //     'cash_on_delivery',
+  //     totalCost,
+  //     totalProfit: orderItem.subtotal - totalCost
+  //   };
+  // }
+
+  static async mapPaymentMethod(method) {
+    const methodMap = {
+      'credit_card': 'Credit Card',
+      'paypal': 'PayPal',
+      'bank_transfer': 'Bank Transfer',
+      'cash_on_delivery': 'Cash on Delivery',
       soldBy: new mongoose.Types.ObjectId(sellerId),
       saleLocation: 'Online Store',
       notes: `Order delivery - #${order.orderNumber}`
-    });
+    };
 
     await itemSale.save({ session });
 

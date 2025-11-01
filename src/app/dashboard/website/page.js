@@ -815,14 +815,14 @@ export default function WebsitePage() {
                 <p>
                   <strong>Design & Branding:</strong> Use "Customize Design" to update your store logo, banner, and brand colors.
                 </p>
-                <p>
+                {/* <p>
                   <strong>Advanced Layout:</strong> Visit <button 
                     onClick={() => setCurrentView('settings')}
                     className="underline hover:text-blue-900 font-medium"
                   >
                     Website Settings
                   </button> → "Appearance & Layout" for themes, product layouts, and more customization options.
-                </p>
+                </p> */}
                 <p>
                   <strong>Product Display:</strong> Control what products appear on your website using "Manage Website Inventory".
                 </p>

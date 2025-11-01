@@ -42,6 +42,7 @@ export default function InventoryPage() {
     try {
       const response = await secureApiCall('/api/inventory');
       if (response.success) {
+        // The enhanced inventory API now returns current batch pricing
         setInventoryData(response.data);
       }
     } catch (error) {
@@ -505,6 +506,12 @@ export default function InventoryPage() {
                       <div>
                         <div className="text-sm font-medium text-gray-900">{item.productName}</div>
                         {item.brand && <div className="text-xs text-gray-500">{item.brand}</div>}
+                        {/* Show current batch info if available */}
+                        {item.batchPricing?.hasActiveBatch && (
+                          <div className="text-xs text-green-600 mt-1">
+                            Current: {item.batchPricing.activeBatchCode}
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -517,14 +524,37 @@ export default function InventoryPage() {
                       <span className="text-sm text-gray-900">{item.quantityInStock} {item.unitOfMeasure}</span>
                     </td>
                     <td className="px-6 py-4">
-                      <span className="text-sm text-gray-900">{formatCurrency(item.costPrice)}</span>
+                      <div className="flex flex-col">
+                        {/* Show current batch cost price */}
+                        <span className="text-sm text-gray-900">
+                          {formatCurrency(item.currentCostPrice || item.costPrice)}
+                        </span>
+                        {/* Show if using batch pricing */}
+                        {item.currentCostPrice && item.currentCostPrice !== item.costPrice && (
+                          <span className="text-xs text-gray-400 line-through">
+                            {formatCurrency(item.costPrice)}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4">
-                      <span className="text-sm text-gray-900">{formatCurrency(item.sellingPrice)}</span>
+                      <div className="flex flex-col">
+                        {/* Show current batch selling price */}
+                        <span className="text-sm text-gray-900">
+                          {formatCurrency(item.currentSellingPrice || item.sellingPrice)}
+                        </span>
+                        {/* Show if using batch pricing */}
+                        {item.currentSellingPrice && item.currentSellingPrice !== item.sellingPrice && (
+                          <span className="text-xs text-gray-400 line-through">
+                            {formatCurrency(item.sellingPrice)}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4">
                       <span className="text-sm font-medium text-gray-900">
-                        {formatCurrency(item.quantityInStock * item.costPrice)}
+                        {/* Use current batch cost price for stock value calculation */}
+                        {formatCurrency(item.quantityInStock * (item.currentCostPrice || item.costPrice))}
                       </span>
                     </td>
                     <td className="px-6 py-4">

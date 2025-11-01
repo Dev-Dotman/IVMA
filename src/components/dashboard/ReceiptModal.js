@@ -1,11 +1,13 @@
 "use client";
-import { X, Download, Printer, FileText } from "lucide-react";
+import { X, Download, Printer, FileText, Truck } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useState, useEffect } from "react";
+import DeliveryScheduleModal from "./DeliveryScheduleModal";
 
 export default function ReceiptModal({ isOpen, onClose, sale }) {
   const { secureApiCall } = useAuth();
   const [store, setStore] = useState(null);
+  const [isDeliveryModalOpen, setIsDeliveryModalOpen] = useState(false);
 
   // Fetch store information
   const fetchStoreInfo = async () => {
@@ -455,6 +457,30 @@ ivma.ng
     }
   };
 
+  // Handle delivery scheduling
+  const handleScheduleDelivery = async (deliveryData) => {
+    try {
+      const response = await secureApiCall('/api/deliveries', {
+        method: 'POST',
+        body: JSON.stringify({
+          saleId: sale._id,
+          transactionId: sale.transactionId,
+          ...deliveryData
+        })
+      });
+
+      if (response.success) {
+        alert('Delivery scheduled successfully!');
+        setIsDeliveryModalOpen(false);
+      } else {
+        throw new Error(response.message);
+      }
+    } catch (error) {
+      console.error('Error scheduling delivery:', error);
+      throw error;
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl w-full max-w-lg overflow-hidden">
@@ -562,6 +588,16 @@ ivma.ng
               <Printer className="w-4 h-4 mr-1.5" />
               Print
             </button>
+            
+            {/* Add Delivery Scheduling Button */}
+            <button
+              onClick={() => setIsDeliveryModalOpen(true)}
+              className="flex items-center justify-center px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+            >
+              <Truck className="w-4 h-4 mr-1.5" />
+              Schedule Delivery
+            </button>
+            
             <button
               onClick={downloadReceiptAsPDF}
               className="flex items-center justify-center px-3 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50 transition-colors"
@@ -592,6 +628,14 @@ ivma.ng
           </p>
         </div>
       </div>
+
+      {/* Delivery Schedule Modal */}
+      <DeliveryScheduleModal
+        isOpen={isDeliveryModalOpen}
+        onClose={() => setIsDeliveryModalOpen(false)}
+        onSubmit={handleScheduleDelivery}
+        sale={sale}
+      />
     </div>
   );
 }

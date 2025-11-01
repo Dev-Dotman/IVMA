@@ -332,7 +332,7 @@ export default function WebsiteSettingsView({ onBack, store, onStoreUpdated }) {
           </div>
 
           {/* Appearance & Layout */}
-          <div className="bg-white rounded-2xl p-6 border border-gray-100">
+          {/* <div className="bg-white rounded-2xl p-6 border border-gray-100">
             <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
               <Palette className="w-5 h-5 mr-2 text-gray-600" />
               Appearance & Layout
@@ -363,10 +363,10 @@ export default function WebsiteSettingsView({ onBack, store, onStoreUpdated }) {
                 />
               </div>
             </div>
-          </div>
+          </div> */}
 
           {/* Product Display Settings */}
-          <div className="bg-white rounded-2xl p-6 border border-gray-100">
+          {/* <div className="bg-white rounded-2xl p-6 border border-gray-100">
             <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
               <Settings className="w-5 h-5 mr-2 text-gray-600" />
               Product Display Settings
@@ -438,10 +438,10 @@ export default function WebsiteSettingsView({ onBack, store, onStoreUpdated }) {
                 </label>
               </div>
             </div>
-          </div>
+          </div> */}
 
           {/* Analytics */}
-          <div className="bg-white rounded-2xl p-6 border border-gray-100">
+          {/* <div className="bg-white rounded-2xl p-6 border border-gray-100">
             <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
               <Share2 className="w-5 h-5 mr-2 text-gray-600" />
               Analytics & Tracking
@@ -498,13 +498,13 @@ export default function WebsiteSettingsView({ onBack, store, onStoreUpdated }) {
                 <p className="text-xs text-gray-500 mt-1">Add custom tracking scripts (Facebook Pixel, etc.)</p>
               </div>
             </div>
-          </div>
+          </div> */}
         </div>
 
         {/* Sidebar */}
         <div className="space-y-6">
           {/* Domain Settings */}
-          <div className="bg-white rounded-2xl p-6 border border-gray-100">
+          {/* <div className="bg-white rounded-2xl p-6 border border-gray-100">
             <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
               <Globe className="w-5 h-5 mr-2 text-gray-600" />
               Domain Settings
@@ -546,10 +546,10 @@ export default function WebsiteSettingsView({ onBack, store, onStoreUpdated }) {
                 </label>
               </div>
             </div>
-          </div>
+          </div> */}
 
           {/* Website Features */}
-          <div className="bg-white rounded-2xl p-6 border border-gray-100">
+          {/* <div className="bg-white rounded-2xl p-6 border border-gray-100">
             <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
               <Settings className="w-5 h-5 mr-2 text-gray-600" />
               Website Features
@@ -654,7 +654,7 @@ export default function WebsiteSettingsView({ onBack, store, onStoreUpdated }) {
                 </label>
               </div>
             </div>
-          </div>
+          </div> */}
 
           {/* Quick Actions */}
           <div className="bg-white rounded-2xl p-6 border border-gray-100">
@@ -673,7 +673,7 @@ export default function WebsiteSettingsView({ onBack, store, onStoreUpdated }) {
                 </a>
               )}
               
-              <button className="w-full flex items-center justify-center px-4 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors">
+              {/* <button className="w-full flex items-center justify-center px-4 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors">
                 <Code className="w-4 h-4 mr-2" />
                 Export Settings
               </button>
@@ -681,7 +681,7 @@ export default function WebsiteSettingsView({ onBack, store, onStoreUpdated }) {
               <button className="w-full flex items-center justify-center px-4 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors">
                 <Bell className="w-4 h-4 mr-2" />
                 Setup Notifications
-              </button>
+              </button> */}
             </div>
           </div>
         </div>

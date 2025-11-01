@@ -20,17 +20,25 @@ export default function InventorySalesTable({ item }) {
       setSalesLoading(true);
       const params = new URLSearchParams({
         page: page.toString(),
-        limit: salesPerPage.toString()
+        limit: salesPerPage.toString(),
+        inventoryId: item._id // Filter sales by inventory item
       });
       
       if (batchFilter) {
         params.append('batchId', batchFilter);
       }
 
-      const response = await secureApiCall(`/api/inventory/${item._id}/sales?${params.toString()}`);
+      const response = await secureApiCall(`/api/pos/sales?${params.toString()}`);
       if (response.success) {
-        setSalesData(response.data.sales);
-        setTotalSalesPages(Math.ceil(response.data.total / salesPerPage));
+        // Filter sales to only include those with the current item
+        const filteredSales = response.data.sales.filter(sale => 
+          sale.items && sale.items.some(saleItem => 
+            saleItem.inventoryId === item._id
+          )
+        );
+        
+        setSalesData(filteredSales);
+        setTotalSalesPages(Math.ceil(filteredSales.length / salesPerPage));
       }
     } catch (error) {
       console.error('Error fetching sales data:', error);
@@ -90,29 +98,30 @@ export default function InventorySalesTable({ item }) {
     return options;
   };
 
-  // Calculate batch-specific analytics
+  // Get batch analytics for the filtered batch
   const getBatchAnalytics = () => {
     if (!selectedBatchFilter || !salesData.length) return null;
     
-    const batchSales = salesData.filter(sale => 
-      sale.batchesSoldFrom && sale.batchesSoldFrom.some(batch => batch.batchId === selectedBatchFilter)
-    );
+    let totalQuantity = 0;
+    let totalRevenue = 0;
+    let totalCost = 0;
+    let transactions = 0;
     
-    const totalQuantity = batchSales.reduce((sum, sale) => {
-      const saleBatches = sale.batchesSoldFrom || [];
-      const batchData = saleBatches.find(b => b.batchId === selectedBatchFilter);
-      return sum + (batchData?.quantitySoldFromBatch || 0);
-    }, 0);
+    salesData.forEach(sale => {
+      const itemInSale = sale.items?.find(saleItem => saleItem.inventoryId === item._id);
+      if (itemInSale && itemInSale.batchesSoldFrom) {
+        const batchData = itemInSale.batchesSoldFrom.find(batch => batch.batchId === selectedBatchFilter);
+        if (batchData) {
+          totalQuantity += batchData.quantityFromBatch || 0;
+          totalRevenue += (batchData.quantityFromBatch || 0) * itemInSale.unitPrice;
+          totalCost += (batchData.quantityFromBatch || 0) * (batchData.costPriceFromBatch || 0);
+          transactions += 1;
+        }
+      }
+    });
     
-    const totalRevenue = batchSales.reduce((sum, sale) => {
-      const saleBatches = sale.batchesSoldFrom || [];
-      const batchData = saleBatches.find(b => b.batchId === selectedBatchFilter);
-      return sum + ((batchData?.quantitySoldFromBatch || 0) * sale.unitSalePrice);
-    }, 0);
-    
-    const selectedBatch = batches.find(b => b._id === selectedBatchFilter);
-    const totalCost = totalQuantity * (selectedBatch?.costPrice || 0);
     const totalProfit = totalRevenue - totalCost;
+    const selectedBatch = batches.find(b => b._id === selectedBatchFilter);
     
     return {
       totalQuantity,
@@ -121,7 +130,7 @@ export default function InventorySalesTable({ item }) {
       totalProfit,
       averagePrice: totalQuantity > 0 ? totalRevenue / totalQuantity : 0,
       batchCode: selectedBatch?.batchCode || '',
-      transactions: batchSales.length
+      transactions
     };
   };
 
@@ -136,7 +145,7 @@ export default function InventorySalesTable({ item }) {
   if (!item) return null;
 
   return (
-    <div className="mt-8">
+    <div className="mt-8 w-full">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-medium text-gray-900">Sales History</h3>
         <div className="flex items-center space-x-3">
@@ -226,22 +235,28 @@ export default function InventorySalesTable({ item }) {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {salesData.map((sale) => {
-                // Add null check for batchesSoldFrom
-                const saleBatches = sale.batchesSoldFrom || [];
+                // Find the specific item in this sale
+                const itemInSale = sale.items?.find(saleItem => saleItem.inventoryId === item._id);
+                if (!itemInSale) return null;
+
+                const saleBatches = itemInSale.batchesSoldFrom || [];
                 
                 const filteredBatches = selectedBatchFilter 
                   ? saleBatches.filter(batch => batch.batchId === selectedBatchFilter)
                   : saleBatches;
                 
                 const saleQuantity = selectedBatchFilter
-                  ? filteredBatches.reduce((sum, batch) => sum + (batch.quantitySoldFromBatch || 0), 0)
-                  : sale.quantitySold;
+                  ? filteredBatches.reduce((sum, batch) => sum + (batch.quantityFromBatch || 0), 0)
+                  : itemInSale.quantity;
                 
-                const saleRevenue = saleQuantity * sale.unitSalePrice;
+                const saleRevenue = saleQuantity * itemInSale.unitPrice;
                 const saleCost = filteredBatches.reduce((sum, batch) => 
-                  sum + ((batch.quantitySoldFromBatch || 0) * (batch.unitCostPriceFromBatch || 0)), 0
+                  sum + ((batch.quantityFromBatch || 0) * (batch.costPriceFromBatch || 0)), 0
                 );
                 const saleProfit = saleRevenue - saleCost;
+
+                // Skip if filtered batch doesn't exist in this sale
+                if (selectedBatchFilter && filteredBatches.length === 0) return null;
 
                 return (
                   <tr key={sale._id} className="hover:bg-gray-50">
@@ -253,7 +268,7 @@ export default function InventorySalesTable({ item }) {
                       })}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-900 font-mono">
-                      {sale.saleTransactionId?.transactionId || sale.transactionId || 'N/A'}
+                      {sale.transactionId || 'N/A'}
                     </td>
                     <td className="px-4 py-3 text-sm">
                       <div className="space-y-1">
@@ -268,7 +283,7 @@ export default function InventorySalesTable({ item }) {
                                 {batchIndex >= 0 ? `Batch ${batchIndex + 1}` : 'Unknown Batch'} ({batch.batchCode || 'N/A'})
                               </span>
                               <span className="text-xs font-medium text-gray-900">
-                                {batch.quantitySoldFromBatch || 0} {item.unitOfMeasure.toLowerCase()}
+                                {batch.quantityFromBatch || 0} {item.unitOfMeasure.toLowerCase()}
                               </span>
                             </div>
                           );
@@ -283,7 +298,7 @@ export default function InventorySalesTable({ item }) {
                       {saleQuantity} {item.unitOfMeasure.toLowerCase()}
                     </td>
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                      {formatCurrency(sale.unitSalePrice)}
+                      {formatCurrency(itemInSale.unitPrice)}
                     </td>
                     <td className="px-4 py-3 text-sm font-bold text-green-600">
                       {formatCurrency(saleRevenue)}
@@ -301,7 +316,7 @@ export default function InventorySalesTable({ item }) {
                     </td>
                   </tr>
                 );
-              })}
+              }).filter(Boolean)}
             </tbody>
           </table>
 

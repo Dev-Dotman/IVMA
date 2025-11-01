@@ -46,14 +46,149 @@ export async function GET(req) {
     
     const total = await Inventory.countDocuments(totalQuery);
 
+    // Enhance inventory items with current batch pricing
+    const enhancedInventory = await Promise.all(
+      inventory.map(async (item) => {
+        try {
+          // Get all batches for this item, sorted by FIFO (dateReceived ascending)
+          const batches = await InventoryBatch.find({
+            productId: item._id,
+            userId: user._id
+          }).sort({ dateReceived: 1 }); // FIFO order
+
+          console.log(`Processing item ${item.productName}:`, {
+            totalBatches: batches.length,
+            batches: batches.map(b => ({
+              batchCode: b.batchCode,
+              quantityIn: b.quantityIn,
+              quantitySold: b.quantitySold,
+              remaining: b.quantityIn - b.quantitySold,
+              status: b.status,
+              dateReceived: b.dateReceived
+            }))
+          });
+
+          // Find the current active batch using proper FIFO logic
+          // This should be the first batch with remaining quantity > 0 when sorted by dateReceived
+          const currentActiveBatch = batches.find(batch => {
+            const remainingQuantity = (batch.quantityIn || 0) - (batch.quantitySold || 0);
+            console.log(`Checking batch ${batch.batchCode}:`, {
+              quantityIn: batch.quantityIn,
+              quantitySold: batch.quantitySold,
+              remaining: remainingQuantity,
+              hasRemaining: remainingQuantity > 0
+            });
+            return remainingQuantity > 0;
+          });
+
+          console.log(`Current active batch for ${item.productName}:`, 
+            currentActiveBatch ? {
+              batchCode: currentActiveBatch.batchCode,
+              remaining: currentActiveBatch.quantityIn - currentActiveBatch.quantitySold,
+              costPrice: currentActiveBatch.costPrice,
+              sellingPrice: currentActiveBatch.sellingPrice
+            } : 'No active batch found'
+          );
+
+          // Calculate batch-based pricing
+          let batchPricing = {
+            currentCostPrice: item.costPrice,
+            currentSellingPrice: item.sellingPrice,
+            hasActiveBatch: false,
+            activeBatchCode: null,
+            activeBatchRemaining: 0
+          };
+
+          if (currentActiveBatch) {
+            batchPricing = {
+              currentCostPrice: currentActiveBatch.costPrice,
+              currentSellingPrice: currentActiveBatch.sellingPrice,
+              hasActiveBatch: true,
+              activeBatchCode: currentActiveBatch.batchCode,
+              activeBatchRemaining: (currentActiveBatch.quantityIn || 0) - (currentActiveBatch.quantitySold || 0),
+              activeBatchId: currentActiveBatch._id,
+              activeBatchDateReceived: currentActiveBatch.dateReceived
+            };
+          }
+
+          // Calculate weighted averages across all batches
+          const totalQuantityIn = batches.reduce((sum, batch) => sum + (batch.quantityIn || 0), 0);
+          const weightedCostSum = batches.reduce((sum, batch) => sum + ((batch.costPrice || 0) * (batch.quantityIn || 0)), 0);
+          const weightedSellingSum = batches.reduce((sum, batch) => sum + ((batch.sellingPrice || 0) * (batch.quantityIn || 0)), 0);
+
+          const averageCostPrice = totalQuantityIn > 0 ? weightedCostSum / totalQuantityIn : item.costPrice;
+          const averageSellingPrice = totalQuantityIn > 0 ? weightedSellingSum / totalQuantityIn : item.sellingPrice;
+
+          // Enhanced item object with batch information
+          const enhancedItem = {
+            ...item.toObject(),
+            batchPricing: {
+              ...batchPricing,
+              averageCostPrice,
+              averageSellingPrice,
+              totalBatches: batches.length,
+              activeBatches: batches.filter(b => ((b.quantityIn || 0) - (b.quantitySold || 0)) > 0).length
+            },
+            // Override pricing with current batch pricing
+            currentCostPrice: batchPricing.currentCostPrice,
+            currentSellingPrice: batchPricing.currentSellingPrice,
+            // Stock value using current batch pricing
+            currentStockValue: (item.quantityInStock || 0) * batchPricing.currentCostPrice,
+            expectedRevenue: (item.quantityInStock || 0) * batchPricing.currentSellingPrice,
+            // Profit margin using current batch pricing
+            currentProfitMargin: batchPricing.currentCostPrice > 0 
+              ? (((batchPricing.currentSellingPrice - batchPricing.currentCostPrice) / batchPricing.currentCostPrice) * 100).toFixed(1)
+              : 0
+          };
+
+          console.log(`Final pricing for ${item.productName}:`, {
+            currentCostPrice: enhancedItem.currentCostPrice,
+            currentSellingPrice: enhancedItem.currentSellingPrice,
+            hasActiveBatch: batchPricing.hasActiveBatch,
+            activeBatchCode: batchPricing.activeBatchCode
+          });
+
+          return enhancedItem;
+        } catch (batchError) {
+          console.error(`Error processing batches for item ${item._id}:`, batchError);
+          // Return item with original pricing if batch processing fails
+          return {
+            ...item.toObject(),
+            batchPricing: {
+              currentCostPrice: item.costPrice,
+              currentSellingPrice: item.sellingPrice,
+              hasActiveBatch: false,
+              activeBatchCode: null,
+              activeBatchRemaining: 0,
+              averageCostPrice: item.costPrice,
+              averageSellingPrice: item.sellingPrice,
+              totalBatches: 0,
+              activeBatches: 0
+            },
+            currentCostPrice: item.costPrice,
+            currentSellingPrice: item.sellingPrice,
+            currentStockValue: (item.quantityInStock || 0) * item.costPrice,
+            expectedRevenue: (item.quantityInStock || 0) * item.sellingPrice,
+            currentProfitMargin: item.costPrice > 0 
+              ? (((item.sellingPrice - item.costPrice) / item.costPrice) * 100).toFixed(1)
+              : 0
+          };
+        }
+      })
+    );
+
     return NextResponse.json({
       success: true,
-      data: inventory,
+      data: enhancedInventory,
       pagination: {
         current: page,
         pages: Math.ceil(total / limit),
         total,
         limit
+      },
+      batchInfo: {
+        note: 'Pricing reflects current active batch using FIFO methodology',
+        methodology: 'First In, First Out (FIFO) - oldest batches are sold first'
       }
     });
 
