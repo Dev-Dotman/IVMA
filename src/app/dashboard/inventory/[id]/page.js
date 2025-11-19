@@ -6,14 +6,14 @@ import { useAuth } from "@/contexts/AuthContext";
 import { AlertTriangle } from "lucide-react";
 
 // Import modular components
-import InventoryDetailsHeader from "@/components/dashboard/inventory/InventoryDetailsHeader";
-import InventoryProductOverview from "@/components/dashboard/inventory/InventoryProductOverview";
-import InventorySalesAnalytics from "@/components/dashboard/inventory/InventorySalesAnalytics";
-import InventoryAdditionalInfo from "@/components/dashboard/inventory/InventoryAdditionalInfo";
-import InventoryQuickActions from "@/components/dashboard/inventory/InventoryQuickActions";
-import InventoryBatchStatus from "@/components/dashboard/inventory/InventoryBatchStatus";
-import InventoryStockAlert from "@/components/dashboard/inventory/InventoryStockAlert";
-import InventoryPricingAnalysis from "@/components/dashboard/inventory/InventoryPricingAnalysis";
+import InventoryDetailsHeader from "@/components/dashboard/Inventory/InventoryDetailsHeader";
+import InventoryProductOverview from "@/components/dashboard/Inventory/InventoryProductOverview";
+import InventorySalesAnalytics from "@/components/dashboard/Inventory/InventorySalesAnalytics";
+import InventoryAdditionalInfo from "@/components/dashboard/Inventory/InventoryAdditionalInfo";
+import InventoryQuickActions from "@/components/dashboard/Inventory/InventoryQuickActions";
+import InventoryBatchStatus from "@/components/dashboard/Inventory/InventoryBatchStatus";
+import InventoryStockAlert from "@/components/dashboard/Inventory/InventoryStockAlert";
+import InventoryPricingAnalysis from "@/components/dashboard/Inventory/InventoryPricingAnalysis";
 
 // Import existing modals
 import EditInventoryModal from "@/components/dashboard/EditInventoryModal";

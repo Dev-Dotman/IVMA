@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import ScheduleCard from "@/components/dashboard/ScheduleCard";
+import CreateStoreModal from "@/components/dashboard/CreateStoreModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { 
   DollarSign, 
@@ -15,7 +16,9 @@ import {
   Users,
   Activity,
   Receipt,
-  Package
+  Package,
+  AlertCircle,
+  Store
 } from "lucide-react";
 
 export default function DashboardOverview() {
@@ -26,11 +29,24 @@ export default function DashboardOverview() {
   const [categoryStats, setCategoryStats] = useState([]);
   const [recentSales, setRecentSales] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [hasStore, setHasStore] = useState(true);
+  const [isCreateStoreModalOpen, setIsCreateStoreModalOpen] = useState(false);
 
   // Fetch all dashboard data
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
+      
+      // First check if user has a store
+      const storeResponse = await secureApiCall('/api/stores');
+      if (!storeResponse.success || !storeResponse.hasStore) {
+        setHasStore(false);
+        setIsCreateStoreModalOpen(true);
+        setLoading(false);
+        return;
+      }
+      
+      setHasStore(true);
       
       // Fetch inventory statistics
       const statsResponse = await secureApiCall('/api/inventory/stats');
@@ -66,6 +82,14 @@ export default function DashboardOverview() {
   useEffect(() => {
     fetchDashboardData();
   }, []);
+
+  // Handle store creation
+  const handleStoreCreated = (newStore) => {
+    setHasStore(true);
+    setIsCreateStoreModalOpen(false);
+    // Refresh dashboard data
+    fetchDashboardData();
+  };
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-NG', {
@@ -117,6 +141,36 @@ export default function DashboardOverview() {
             <p className="text-gray-600">Loading dashboard data...</p>
           </div>
         </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!hasStore) {
+    return (
+      <DashboardLayout title="Dashboard Overview" subtitle="Today, August 16th 2024">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center max-w-md">
+            <div className="w-16 h-16 bg-teal-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Store className="w-8 h-8 text-teal-600" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Welcome to IVMA!</h2>
+            <p className="text-gray-500 mb-6">
+              To get started with your dashboard and inventory management, you'll need to create your store first.
+            </p>
+            <button
+              onClick={() => setIsCreateStoreModalOpen(true)}
+              className="px-6 py-3 bg-teal-600 text-white rounded-xl hover:bg-teal-700 transition-colors font-medium"
+            >
+              Create Your Store
+            </button>
+          </div>
+        </div>
+
+        {/* Create Store Modal */}
+        <CreateStoreModal
+          isOpen={isCreateStoreModalOpen}
+          onStoreCreated={handleStoreCreated}
+        />
       </DashboardLayout>
     );
   }
@@ -584,6 +638,12 @@ export default function DashboardOverview() {
           </div>
         </div>
       </div>
+
+      {/* Create Store Modal */}
+      <CreateStoreModal
+        isOpen={isCreateStoreModalOpen}
+        onStoreCreated={handleStoreCreated}
+      />
     </DashboardLayout>
   );
 }

@@ -25,16 +25,11 @@ export async function POST(req) {
     const tempUser = await TempUser.createTempUser(userData, ipAddress, userAgent);
 
     // Send verification email
-    const emailResult = await sendVerificationEmail(
+    await sendVerificationEmail(
       tempUser.email, 
       tempUser.verificationCode, 
       tempUser.firstName
     );
-
-    if (!emailResult.success) {
-      console.error('Failed to send verification email:', emailResult.message);
-      // Still continue with signup process
-    }
 
     return NextResponse.json({
       success: true,
