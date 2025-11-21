@@ -436,12 +436,12 @@ storeSchema.virtual('websiteUrl').get(function() {
   }
   
   // Use IVMA subdomain/path
-  return `https://${this.ivmaWebsite.websitePath}.ivma.ng`;
+  return `https://store.ivma.ng/${this.ivmaWebsite.websitePath}`;
 });
 
 storeSchema.virtual('websiteFullPath').get(function() {
   if (!this.ivmaWebsite.websitePath) return null;
-  return `${this.ivmaWebsite.websitePath}.ivma.ng`;
+  return `store.ivma.ng/${this.ivmaWebsite.websitePath}`;
 });
 
 // Static methods
