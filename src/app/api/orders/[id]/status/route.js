@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Order from '@/models/Order';
+import Store from '@/models/Store';
+import Sale from '@/models/Sale';
 import { verifySession } from '@/lib/auth';
 import { OrderSaleProcessor } from '@/lib/orderSaleProcessor';
+import { sendOrderProcessedEmail } from '@/lib/email';
 
 // PUT - Update order status
 export async function PUT(req, { params }) {
@@ -85,6 +88,56 @@ export async function PUT(req, { params }) {
           saleCreationError: saleError.message,
           warning: 'Sales were not automatically created due to an error'
         });
+      }
+    }
+
+    // Send order processed email if sales were created successfully
+    if (order.customerSnapshot?.email) {
+      console.log('Attempting to send order processed email to customer...', order.customerSnapshot.email);
+      
+      try {
+        // Fetch the sale record created from this order
+        const sale = await Sale.findOne({ 
+          orderNumber: order.orderNumber,
+          isFromOrder: true 
+        });
+
+        if (sale) {
+          // Get store information for email
+          const store = await Store.getStoreByUser(user._id);
+          const storeName = store?.storeName || 'IVMA Store';
+          
+          // Use sale data for the email
+          await sendOrderProcessedEmail(
+            order.customerSnapshot.email,
+            {
+              orderNumber: order.orderNumber,
+              customer: {
+                name: `${order.customerSnapshot.firstName} ${order.customerSnapshot.lastName}`,
+                phone: order.customerSnapshot.phone || order.shippingAddress.phone || '',
+                email: order.customerSnapshot.email
+              }
+            },
+            {
+              transactionId: sale.transactionId,
+              items: sale.items,
+              total: sale.total,
+              subtotal: sale.subtotal,
+              discount: sale.discount || 0,
+              tax: sale.tax || 0,
+              saleDate: sale.saleDate,
+              paymentMethod: sale.paymentMethod
+            },
+            storeName
+          );
+          
+          console.log('Order processed email sent successfully');
+        } else {
+          console.log('No sale record found for order, skipping email');
+        }
+      } catch (emailError) {
+        console.error('Failed to send order processed email:', emailError);
+        // Don't fail the order processing if email fails
       }
     }
 

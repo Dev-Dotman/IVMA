@@ -445,7 +445,7 @@ export default function POSPage() {
       if (saleResponse.success) {
         console.log('Order sale response:', saleResponse);
         
-        // Update the order status to 'processed' since it's been processed and sold
+        // Update the order status to 'processed'
         const statusUpdateData = {
           status: 'processed',
           note: `Order processed through POS. Sale transaction: ${saleResponse.data.transactionId}`,
@@ -464,11 +464,11 @@ export default function POSPage() {
           // Complete the processing
           const completedOrder = completeOrderProcessing();
           
-          // Prepare completed sale data for receipt modal with proper transactionId
+          // Prepare completed sale data
           const completedSaleData = {
             ...saleData,
             _id: saleResponse.data._id,
-            transactionId: saleResponse.data.transactionId, // Use the generated transactionId
+            transactionId: saleResponse.data.transactionId,
             saleDate: saleResponse.data.saleDate || new Date().toISOString(),
             status: saleResponse.data.status || 'completed',
             processedOrder: completedOrder

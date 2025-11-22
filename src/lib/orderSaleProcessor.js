@@ -5,6 +5,7 @@ import InventoryBatch from '@/models/InventoryBatch';
 import InventoryActivity from '@/models/InventoryActivity';
 import Notification from '@/models/Notification';
 import mongoose from 'mongoose';
+import { sendOrderProcessedEmail } from './email';
 
 export class OrderSaleProcessor {
   static async processOrderDelivery(order, session = null) {
@@ -330,6 +331,45 @@ export class OrderSaleProcessor {
       totalCost,
       totalProfit: orderItem.subtotal - totalCost
     });
+
+    if (order.customerSnapshot?.email) {
+                try {
+                  // Get store information for email
+                  const store = await Store.getStoreByUser(user._id);
+                  const storeName = store?.storeName || 'IVMA Store';
+                  
+                  // Send email for each sale created (usually just one, but could be multiple if multiple sellers)
+                  for (const sale of saleResults.sales) {
+                    await sendOrderProcessedEmail(
+                      order.customerSnapshot.email,
+                      {
+                        orderNumber: order.orderNumber,
+                        customer: {
+                          name: `${order.customerSnapshot.firstName} ${order.customerSnapshot.lastName}`,
+                          phone: order.customerSnapshot.phone || order.shippingAddress.phone || '',
+                          email: order.customerSnapshot.email
+                        }
+                      },
+                      {
+                        transactionId: sale.transactionId,
+                        items: sale.items,
+                        total: sale.total,
+                        subtotal: sale.subtotal,
+                        discount: sale.discount || 0,
+                        tax: sale.tax || 0,
+                        saleDate: sale.saleDate,
+                        paymentMethod: sale.paymentMethod
+                      },
+                      storeName
+                    );
+                  }
+                  
+                  console.log('Order processed email sent successfully');
+                } catch (emailError) {
+                  console.error('Failed to send order processed email:', emailError);
+                  // Don't fail the order processing if email fails
+                }
+              }
   }
   }
 

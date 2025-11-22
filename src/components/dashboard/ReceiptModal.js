@@ -1,5 +1,5 @@
 "use client";
-import { X, Download, Printer, FileText, Truck } from "lucide-react";
+import { X, Download, Printer, FileText, Truck, Image as ImageIcon } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useState, useEffect } from "react";
 import DeliveryScheduleModal from "./DeliveryScheduleModal";
@@ -240,49 +240,131 @@ export default function ReceiptModal({ isOpen, onClose, sale }) {
     }
   };
 
-  // Download as text file (fallback)
-  const downloadReceiptAsText = () => {
+  // Download receipt as PNG image
+  const downloadReceiptAsImage = async () => {
     try {
+      const html2canvas = (await import('html2canvas')).default;
+      
+      // Create a temporary div with receipt content
+      const receiptDiv = document.createElement('div');
+      receiptDiv.style.position = 'absolute';
+      receiptDiv.style.left = '-9999px';
+      receiptDiv.style.width = '350px';
+      receiptDiv.style.backgroundColor = 'white';
+      receiptDiv.style.padding = '30px';
+      receiptDiv.style.fontFamily = "'Courier New', monospace";
+      receiptDiv.style.fontSize = '13px';
+      receiptDiv.style.lineHeight = '1.6';
+      receiptDiv.style.color = '#000';
+      
       const storeName = store?.storeName || 'IVMA STORE';
       const storeAddress = store?.storeType === 'physical' && store?.fullAddress ? store.fullAddress : '';
       const storePhone = store?.storePhone || '';
       const storeEmail = store?.storeEmail || '';
       
-      const receiptText = `
-${storeName}
-${storeAddress ? storeAddress + '\n' : ''}${storePhone ? 'Tel: ' + storePhone + '\n' : ''}${storeEmail ? 'Email: ' + storeEmail + '\n' : ''}
-Receipt #${sale.transactionId}
-${formatDate(sale.saleDate)}
+      receiptDiv.innerHTML = `
+        <div style="text-align: center; border-bottom: 2px dashed #000; padding-bottom: 15px; margin-bottom: 15px;">
+          <div style="font-size: 20px; font-weight: bold; margin-bottom: 8px;">${storeName}</div>
+          ${storeAddress ? `<div style="font-size: 11px; margin-bottom: 3px;">${storeAddress}</div>` : ''}
+          ${storePhone ? `<div style="font-size: 11px; margin-bottom: 3px;">Tel: ${storePhone}</div>` : ''}
+          ${storeEmail ? `<div style="font-size: 11px; margin-bottom: 3px;">Email: ${storeEmail}</div>` : ''}
+          <div style="margin-top: 10px; font-size: 14px; font-weight: bold;">Receipt #${sale.transactionId}</div>
+          <div style="font-size: 11px; color: #666;">${formatDate(sale.saleDate)}</div>
+        </div>
+        
+        ${sale.customer.name || sale.customer.phone ? `
+          <div style="margin: 15px 0; padding: 10px; background: #f5f5f5; border-radius: 5px;">
+            ${sale.customer.name ? `<div style="margin-bottom: 5px;"><strong>Customer:</strong> ${sale.customer.name}</div>` : ''}
+            ${sale.customer.phone ? `<div><strong>Phone:</strong> ${sale.customer.phone}</div>` : ''}
+          </div>
+        ` : ''}
 
-${sale.customer.name ? `Customer: ${sale.customer.name}\n` : ''}${sale.customer.phone ? `Phone: ${sale.customer.phone}\n` : ''}
+        <div style="margin: 15px 0;">
+          <div style="font-weight: bold; margin-bottom: 10px; border-bottom: 1px solid #ccc; padding-bottom: 5px;">ITEMS PURCHASED</div>
+          ${sale.items.map(item => `
+            <div style="display: flex; justify-content: space-between; margin: 8px 0; padding: 5px 0;">
+              <div style="flex: 1;">
+                <div style="font-weight: 500;">${item.productName}</div>
+                <div style="font-size: 11px; color: #666;">Qty: ${item.quantity} × ${formatCurrency(item.unitPrice)}</div>
+              </div>
+              <div style="font-weight: bold; text-align: right;">${formatCurrency(item.total)}</div>
+            </div>
+          `).join('')}
+        </div>
 
-Items:
-${sale.items.map(item => `${item.productName} x${item.quantity} - ${formatCurrency(item.total)}`).join('\n')}
+        <div style="border-top: 2px dashed #000; padding-top: 15px; margin-top: 15px;">
+          <div style="display: flex; justify-content: space-between; margin: 6px 0;">
+            <span>Subtotal:</span>
+            <span style="font-weight: 500;">${formatCurrency(sale.subtotal)}</span>
+          </div>
+          ${sale.discount > 0 ? `
+            <div style="display: flex; justify-content: space-between; margin: 6px 0; color: #dc2626;">
+              <span>Discount:</span>
+              <span style="font-weight: 500;">-${formatCurrency(sale.discount)}</span>
+            </div>
+          ` : ''}
+          ${sale.tax > 0 ? `
+            <div style="display: flex; justify-content: space-between; margin: 6px 0;">
+              <span>Tax:</span>
+              <span style="font-weight: 500;">${formatCurrency(sale.tax)}</span>
+            </div>
+          ` : ''}
+          <div style="display: flex; justify-content: space-between; margin: 10px 0 6px 0; padding-top: 10px; border-top: 1px solid #000; font-size: 16px; font-weight: bold;">
+            <span>TOTAL:</span>
+            <span>${formatCurrency(sale.total)}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin: 6px 0; font-size: 12px;">
+            <span>Paid (${sale.paymentMethod}):</span>
+            <span style="font-weight: 500;">${formatCurrency(sale.amountReceived)}</span>
+          </div>
+          ${sale.balance > 0 ? `
+            <div style="display: flex; justify-content: space-between; margin: 6px 0; font-size: 12px; color: #059669;">
+              <span>Change:</span>
+              <span style="font-weight: bold;">${formatCurrency(sale.balance)}</span>
+            </div>
+          ` : ''}
+        </div>
 
-Subtotal: ${formatCurrency(sale.subtotal)}${sale.discount > 0 ? `\nDiscount: -${formatCurrency(sale.discount)}` : ''}${sale.tax > 0 ? `\nTax: ${formatCurrency(sale.tax)}` : ''}
-TOTAL: ${formatCurrency(sale.total)}
-Payment (${sale.paymentMethod}): ${formatCurrency(sale.amountReceived)}${sale.balance > 0 ? `\nChange: ${formatCurrency(sale.balance)}` : ''}
-
-${store?.settings?.receiptFooter || 'Thank you for your business!'}
-Please come again
-
-Powered by IVMA
-ivma.ng
+        <div style="text-align: center; margin-top: 20px; padding-top: 15px; border-top: 2px dashed #000;">
+          <div style="font-size: 13px; margin-bottom: 5px;">${store?.settings?.receiptFooter || 'Thank you for your business!'}</div>
+          <div style="font-size: 12px; color: #666;">Please come again</div>
+          <div style="margin-top: 15px; font-size: 10px; color: #999;">
+            <div>Powered by IVMA</div>
+            <div>ivma.ng</div>
+          </div>
+        </div>
       `;
-
-      const blob = new Blob([receiptText], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
       
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `Receipt_${sale.transactionId}_${new Date().toISOString().split('T')[0]}.txt`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      document.body.appendChild(receiptDiv);
+      
+      // Generate canvas from the div
+      const canvas = await html2canvas(receiptDiv, {
+        backgroundColor: '#ffffff',
+        scale: 2, // Higher quality
+        logging: false,
+        windowWidth: 350,
+        windowHeight: receiptDiv.scrollHeight
+      });
+      
+      // Remove temporary div
+      document.body.removeChild(receiptDiv);
+      
+      // Convert canvas to blob and download
+      canvas.toBlob((blob) => {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `Receipt_${sale.transactionId}_${new Date().toISOString().split('T')[0]}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }, 'image/png');
+      
+      alert('Receipt image downloaded successfully!');
     } catch (error) {
-      console.error('Text download failed:', error);
-      alert('Download failed! Please try again.');
+      console.error('Image generation failed:', error);
+      alert('Image generation failed! Please try downloading as PDF instead.');
     }
   };
 
@@ -580,51 +662,52 @@ ivma.ng
 
         {/* Action Buttons */}
         <div className="p-6 border-t border-gray-200">
-          <div className="flex space-x-2">
+          <div className="grid grid-cols-2 gap-2">
             <button
               onClick={printReceipt}
-              className="flex items-center justify-center px-3 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 transition-colors"
+              className="flex items-center justify-center px-3 py-2.5 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 transition-colors"
             >
               <Printer className="w-4 h-4 mr-1.5" />
               Print
             </button>
             
-            {/* Add Delivery Scheduling Button */}
             <button
               onClick={() => setIsDeliveryModalOpen(true)}
-              className="flex items-center justify-center px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+              className="flex items-center justify-center px-3 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
             >
               <Truck className="w-4 h-4 mr-1.5" />
-              Schedule Delivery
+              Delivery
             </button>
             
             <button
               onClick={downloadReceiptAsPDF}
-              className="flex items-center justify-center px-3 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50 transition-colors"
+              className="flex items-center justify-center px-3 py-2.5 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50 transition-colors"
               title="Download as PDF"
             >
               <FileText className="w-4 h-4 mr-1.5" />
               PDF
             </button>
+            
             <button
+              onClick={downloadReceiptAsImage}
+              className="flex items-center justify-center px-3 py-2.5 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50 transition-colors"
+              title="Download as Image"
+            >
+              <ImageIcon className="w-4 h-4 mr-1.5" />
+              Image
+            </button>
+            
+            {/* <button
               onClick={downloadReceipt}
-              className="flex items-center justify-center px-3 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50 transition-colors"
+              className="flex items-center justify-center px-3 py-2.5 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50 transition-colors"
               title="Download as HTML"
             >
               <Download className="w-4 h-4 mr-1.5" />
               HTML
-            </button>
-            <button
-              onClick={downloadReceiptAsText}
-              className="flex items-center justify-center px-3 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50 transition-colors"
-              title="Download as Text"
-            >
-              <Download className="w-4 h-4 mr-1.5" />
-              TXT
-            </button>
+            </button> */}
           </div>
-          <p className="text-xs text-gray-500 mt-3">
-            Print for immediate use, or download as PDF/HTML for best quality
+          <p className="text-xs text-gray-500 mt-3 text-center">
+            Print for immediate use, or download as PDF/Image for sharing
           </p>
         </div>
       </div>

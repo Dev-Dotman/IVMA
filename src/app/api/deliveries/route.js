@@ -3,6 +3,8 @@ import connectToDatabase from '@/lib/mongodb';
 import DeliverySchedule from '@/models/DeliverySchedule';
 import Sale from '@/models/Sale';
 import { verifySession } from '@/lib/auth';
+import { sendDeliveryScheduledEmail } from '@/lib/email';
+import Store from '@/models/Store';
 
 export async function GET(req) {
   try {
@@ -164,6 +166,33 @@ export async function POST(req) {
       { path: 'orderId', select: 'orderNumber totalAmount' },
       { path: 'userId', select: 'firstName lastName email' }
     ]);
+
+    // Get store information for email
+    const store = await Store.getStoreByUser(user._id);
+    const storeName = store?.storeName || 'IVMA Store';
+
+    // Get sale information for email
+    const saleInfo = await Sale.findById(deliveryData.saleId);
+    
+    // Send email notification to customer
+    if (deliveryData.customerEmail) {
+      try {
+        await sendDeliveryScheduledEmail(
+          deliveryData.customerEmail,
+          deliveryData,
+          {
+            transactionId: saleInfo?.transactionId || deliveryData.transactionId,
+            items: saleInfo?.items || [],
+            total: saleInfo?.total || 0,
+            subtotal: saleInfo?.subtotal || saleInfo?.total || 0
+          },
+          storeName
+        );
+      } catch (emailError) {
+        console.error('Failed to send delivery notification email:', emailError);
+        // Don't fail the delivery creation if email fails
+      }
+    }
 
     return NextResponse.json({
       success: true,
