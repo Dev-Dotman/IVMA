@@ -390,126 +390,258 @@ export default function WebsitePage() {
         <div className="lg:col-span-2 space-y-8">
           {/* Website Preview */}
           <div className="bg-white rounded-2xl p-6 border border-gray-100">
-            <h2 className="text-lg font-semibold text-gray-900 mb-6">Website Preview</h2>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg font-semibold text-gray-900">Website Preview</h2>
+              {store.websiteUrl && (
+                <a
+                  href={store.websiteUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center space-x-2 text-sm text-teal-600 hover:text-teal-700 transition-colors"
+                >
+                  <span>View live site</span>
+                  <ExternalLink className="w-4 h-4" />
+                </a>
+              )}
+            </div>
             
             {store.ivmaWebsite?.status === 'active' ? (
-              <div className="border border-gray-200 rounded-xl overflow-hidden">
+              <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
                 {/* Browser Bar */}
-                <div className="bg-gray-100 px-4 py-3 border-b border-gray-200">
+                <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-200">
                   <div className="flex items-center space-x-2">
-                    <div className="flex space-x-1">
-                      <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                      <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                      <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                    <div className="flex space-x-1.5">
+                      <div className="w-2.5 h-2.5 bg-red-400 rounded-full"></div>
+                      <div className="w-2.5 h-2.5 bg-yellow-400 rounded-full"></div>
+                      <div className="w-2.5 h-2.5 bg-green-400 rounded-full"></div>
                     </div>
-                    <div className="flex-1 bg-white rounded px-3 py-1 text-sm text-gray-600">
+                    <div className="flex-1 bg-white rounded-md px-3 py-1.5 text-xs text-gray-500 flex items-center">
+                      <Globe className="w-3 h-3 mr-2 text-gray-400" />
                       {store.websiteUrl}
                     </div>
                   </div>
                 </div>
                 
                 {/* Website Content Preview */}
-                <div className="p-8 bg-white" style={{ backgroundColor: store.branding?.secondaryColor || '#F3F4F6' }}>
-                  {/* Header */}
-                  <div className="text-center mb-8">
+                <div className="bg-gray-50 min-h-[500px]">
+                  {/* Hero Section with Store Info */}
+                  <div 
+                    className="relative px-6 py-8"
+                    style={{ 
+                      background: `linear-gradient(135deg, ${store.branding?.primaryColor || '#0D9488'}15 0%, ${store.branding?.primaryColor || '#0D9488'}05 100%)`
+                    }}
+                  >
+                    {/* Banner Background */}
                     {store.branding?.banner && (
-                      <div className="mb-6">
+                      <div className="absolute inset-0 opacity-10">
                         <img
                           src={store.branding.banner}
                           alt="Store banner"
-                          className="w-full h-32 object-cover rounded-xl"
+                          className="w-full h-full object-cover"
                         />
                       </div>
                     )}
                     
-                    <div className="flex items-center justify-center space-x-4 mb-4">
-                      {store.branding?.logo ? (
-                        <img
-                          src={store.branding.logo}
-                          alt="Store logo"
-                          className="w-16 h-16 object-cover rounded-xl"
-                        />
-                      ) : (
-                        <div 
-                          className="w-16 h-16 rounded-xl flex items-center justify-center"
-                          style={{ backgroundColor: store.branding?.primaryColor || '#0D9488' }}
-                        >
-                          <span className="text-white font-bold text-xl">
-                            {store.storeName?.charAt(0) || 'S'}
-                          </span>
-                        </div>
-                      )}
-                      <div className="text-left">
-                        <h1 className="text-2xl font-bold text-gray-900">{store.storeName}</h1>
-                        {store.storeDescription && (
-                          <p className="text-gray-600">{store.storeDescription}</p>
+                    <div className="relative max-w-4xl mx-auto">
+                      <div className="flex items-start space-x-4 mb-6">
+                        {/* Store Logo */}
+                        {store.branding?.logo ? (
+                          <img
+                            src={store.branding.logo}
+                            alt="Store logo"
+                            className="w-16 h-16 object-cover rounded-2xl shadow-md ring-2 ring-white"
+                          />
+                        ) : (
+                          <div 
+                            className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-md ring-2 ring-white"
+                            style={{ backgroundColor: store.branding?.primaryColor || '#0D9488' }}
+                          >
+                            <span className="text-white font-bold text-2xl">
+                              {store.storeName?.charAt(0) || 'S'}
+                            </span>
+                          </div>
                         )}
-                      </div>
-                    </div>
-                    
-                    <button 
-                      className="px-6 py-3 text-white rounded-xl font-medium"
-                      style={{ backgroundColor: store.branding?.primaryColor || '#0D9488' }}
-                    >
-                      Shop Now
-                    </button>
-                  </div>
-                  
-                  {/* Products Grid - Using actual inventory */}
-                  <div className="grid grid-cols-3 gap-4">
-                    {previewProducts.length > 0 ? (
-                      previewProducts.map((product, index) => (
-                        <div key={product._id || index} className="bg-white rounded-lg p-4 shadow-sm">
-                          <div className="bg-gray-200 rounded-lg h-24 mb-3 overflow-hidden">
-                            {product.image ? (
-                              <img
-                                src={product.image}
-                                alt={product.productName}
-                                className="w-full h-full object-cover"
-                              />
-                            ) : (
-                              <div className="w-full h-full bg-gray-200 flex items-center justify-center">
-                                <Package className="w-8 h-8 text-gray-400" />
+                        
+                        {/* Store Name & Description */}
+                        <div className="flex-1">
+                          <h1 className="text-2xl font-bold text-gray-900 mb-1">
+                            {store.storeName}
+                          </h1>
+                          {store.storeDescription && (
+                            <p className="text-sm text-gray-600 mb-3 max-w-2xl">
+                              {store.storeDescription}
+                            </p>
+                          )}
+                          
+                          {/* Store Meta Info */}
+                          <div className="flex items-center space-x-4 text-xs text-gray-500">
+                            {store.storePhone && (
+                              <div className="flex items-center space-x-1">
+                                <Phone className="w-3 h-3" />
+                                <span>{store.storePhone}</span>
+                              </div>
+                            )}
+                            {store.storeType === 'physical' && store.address?.city && (
+                              <div className="flex items-center space-x-1">
+                                <MapPin className="w-3 h-3" />
+                                <span>{store.address.city}, {store.address.state}</span>
                               </div>
                             )}
                           </div>
-                          <h3 className="font-medium text-gray-900 text-sm truncate" title={product.productName}>
-                            {product.productName}
-                          </h3>
-                          <p className="text-gray-600 text-xs">
-                            {formatCurrency(product.sellingPrice)}
-                          </p>
-                          <p className="text-gray-500 text-xs">
-                            {product.quantityInStock} in stock
-                          </p>
                         </div>
-                      ))
-                    ) : (
-                      // Fallback to sample products if no inventory
-                      [1, 2, 3].map((i) => (
-                        <div key={i} className="bg-white rounded-lg p-4 shadow-sm">
-                          <div className="bg-gray-200 rounded-lg h-24 mb-3 flex items-center justify-center">
-                            <Package className="w-8 h-8 text-gray-400" />
-                          </div>
-                          <h3 className="font-medium text-gray-900 text-sm">Sample Product {i}</h3>
-                          <p className="text-gray-600 text-xs">₦5,000</p>
-                          <p className="text-gray-500 text-xs">In stock</p>
-                        </div>
-                      ))
-                    )}
-                  </div>
-
-                  {/* Add products notice if no inventory */}
-                  {previewProducts.length === 0 && (
-                    <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                      <p className="text-blue-800 text-xs text-center">
-                        <strong>Preview Mode:</strong> Add products to your inventory to see them displayed on your website.
-                        <a href="/dashboard/inventory" className="ml-1 underline hover:text-blue-900">
-                          Add products now →
-                        </a>
-                      </p>
+                      </div>
                     </div>
-                  )}
+                  </div>
+                  
+                  {/* Categories/Filters Bar */}
+                  <div className="bg-white border-y border-gray-200 px-6 py-3">
+                    <div className="max-w-4xl mx-auto flex items-center space-x-2">
+                      <button className="px-4 py-1.5 bg-gray-900 text-white text-xs rounded-full font-medium">
+                        All Categories
+                      </button>
+                      <button className="px-4 py-1.5 border border-gray-200 text-gray-700 text-xs rounded-full hover:bg-gray-50">
+                        All Prices
+                      </button>
+                      <button className="px-4 py-1.5 border border-gray-200 text-gray-700 text-xs rounded-full hover:bg-gray-50">
+                        All Products
+                      </button>
+                      <div className="flex-1"></div>
+                      <span className="text-xs text-gray-500">{previewProducts.length} products</span>
+                    </div>
+                  </div>
+                  
+                  {/* Products Grid */}
+                  <div className="px-6 py-6">
+                    <div className="max-w-4xl mx-auto">
+                      {previewProducts.length > 0 ? (
+                        <div className="grid grid-cols-3 gap-4">
+                          {previewProducts.map((product, index) => (
+                            <div key={product._id || index} className="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow border border-gray-100">
+                              {/* Product Image */}
+                              <div className="relative bg-gray-100 aspect-square overflow-hidden group">
+                                {product.image ? (
+                                  <img
+                                    src={product.image}
+                                    alt={product.productName}
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
+                                    <Package className="w-12 h-12 text-gray-300" />
+                                  </div>
+                                )}
+                                
+                                {/* Stock Badge */}
+                                {product.quantityInStock <= 5 && product.quantityInStock > 0 && (
+                                  <div className="absolute top-2 left-2">
+                                    <span className="px-2 py-1 bg-yellow-500 text-white text-xs font-medium rounded-md">
+                                      Low Stock
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                              
+                              {/* Product Info */}
+                              <div className="p-3">
+                                <div className="mb-2">
+                                  {product.category && (
+                                    <span className="text-xs text-gray-500">{product.category}</span>
+                                  )}
+                                </div>
+                                <h3 className="font-medium text-gray-900 text-sm mb-1 line-clamp-2 min-h-[2.5rem]" title={product.productName}>
+                                  {product.productName}
+                                </h3>
+                                
+                                {/* Price & Stock */}
+                                <div className="flex items-center justify-between mt-2">
+                                  <div>
+                                    <p className="font-bold text-gray-900 text-base">
+                                      {formatCurrency(product.sellingPrice)}
+                                    </p>
+                                    <p className="text-xs text-gray-500">
+                                      {product.quantityInStock} in stock
+                                    </p>
+                                  </div>
+                                </div>
+                                
+                                {/* Add to Cart Button */}
+                                <button 
+                                  className="w-full mt-3 px-3 py-2 text-xs font-medium text-white rounded-lg transition-colors"
+                                  style={{ backgroundColor: store.branding?.primaryColor || '#0D9488' }}
+                                >
+                                  Add to Cart
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        // Empty State
+                        <div className="grid grid-cols-3 gap-4">
+                          {[1, 2, 3].map((i) => (
+                            <div key={i} className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100">
+                              <div className="bg-gray-100 aspect-square flex items-center justify-center">
+                                <Package className="w-12 h-12 text-gray-300" />
+                              </div>
+                              <div className="p-3">
+                                <div className="mb-2">
+                                  <span className="text-xs text-gray-400">Sample Category</span>
+                                </div>
+                                <h3 className="font-medium text-gray-900 text-sm mb-1">
+                                  Sample Product {i}
+                                </h3>
+                                <div className="flex items-center justify-between mt-2">
+                                  <div>
+                                    <p className="font-bold text-gray-900 text-base">₦5,000</p>
+                                    <p className="text-xs text-gray-500">In stock</p>
+                                  </div>
+                                </div>
+                                <button 
+                                  className="w-full mt-3 px-3 py-2 text-xs font-medium text-white rounded-lg"
+                                  style={{ backgroundColor: store.branding?.primaryColor || '#0D9488' }}
+                                >
+                                  Add to Cart
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Add products notice */}
+                      {previewProducts.length === 0 && (
+                        <div className="mt-6 p-4 bg-blue-50 rounded-xl border border-blue-200">
+                          <p className="text-blue-800 text-xs text-center">
+                            <strong>Preview Mode:</strong> Add products to your inventory to see them displayed here.
+                            <a href="/dashboard/inventory" className="ml-1 underline hover:text-blue-900 font-medium">
+                              Add products now →
+                            </a>
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* Footer Preview */}
+                  <div className="bg-white border-t border-gray-200 px-6 py-6 mt-8">
+                    <div className="max-w-4xl mx-auto text-center">
+                      <p className="text-xs text-gray-500">
+                        © {new Date().getFullYear()} {store.storeName}. All rights reserved.
+                      </p>
+                      {getSocialMediaLinks().length > 0 && (
+                        <div className="flex items-center justify-center space-x-3 mt-3">
+                          {getSocialMediaLinks().slice(0, 3).map((social, idx) => {
+                            const IconComponent = social.icon;
+                            return (
+                              <div key={idx} className="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center">
+                                <IconComponent className="w-3 h-3 text-gray-500" />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             ) : (
