@@ -1,10 +1,10 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import CreateStoreModal from "@/components/dashboard/CreateStoreModal";
 import WebsiteSettingsView from "@/components/dashboard/WebsiteSettingsView";
 import WebsiteInventoryView from "@/components/dashboard/WebsiteInventoryView";
-import { useAuth } from "@/contexts/AuthContext";
+import { useWebsiteData } from "@/hooks/useWebsiteData";
 import { 
   Globe, 
   Store, 
@@ -31,96 +31,43 @@ import {
 import StoreBrandingModal from "@/components/dashboard/StoreBrandingModal";
 
 export default function WebsitePage() {
-  const { secureApiCall } = useAuth();
-  const [store, setStore] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [hasStore, setHasStore] = useState(null);
   const [isCreateStoreModalOpen, setIsCreateStoreModalOpen] = useState(false);
-  const [isTogglingWebsite, setIsTogglingWebsite] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [previewProducts, setPreviewProducts] = useState([]); // Add this state
   const [currentView, setCurrentView] = useState('main'); // 'main', 'settings', or 'inventory'
   const [isBrandingModalOpen, setIsBrandingModalOpen] = useState(false);
+  const [isShareDropdownOpen, setIsShareDropdownOpen] = useState(false);
 
-  // Check if user has a store
-  const checkUserStore = async () => {
-    try {
-      setLoading(true);
-      const response = await secureApiCall('/api/stores');
-      if (response.success && response.hasStore) {
-        setStore(response.data);
-        setHasStore(true);
-      } else {
-        setHasStore(false);
-        setIsCreateStoreModalOpen(true);
-      }
-    } catch (error) {
-      console.error('Error checking user store:', error);
-      setHasStore(false);
-      setIsCreateStoreModalOpen(true);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Fetch preview products from inventory
-  const fetchPreviewProducts = async () => {
-    try {
-      const response = await secureApiCall('/api/inventory?limit=3&status=Active');
-      if (response.success) {
-        // Filter only products with stock and take first 3
-        const availableProducts = response.data
-          .filter(item => item.quantityInStock > 0)
-          .slice(0, 3);
-        setPreviewProducts(availableProducts);
-      }
-    } catch (error) {
-      console.error('Error fetching preview products:', error);
-      // Set empty array on error
-      setPreviewProducts([]);
-    }
-  };
-
-  useEffect(() => {
-    const loadData = async () => {
-      await checkUserStore();
-      // Only fetch products if user has a store
-      if (hasStore !== false) {
-        await fetchPreviewProducts();
-      }
-    };
-    loadData();
-  }, [hasStore]);
+  // Use TanStack Query for data fetching
+  const {
+    hasStore,
+    store,
+    storeLoading,
+    isInitialLoading,
+    previewProducts,
+    isLoadingPreviewProducts,
+    toggleWebsite,
+    isTogglingWebsite,
+    refetchStore,
+    refetchPreviewProducts,
+  } = useWebsiteData();
 
   // Handle store creation
   const handleStoreCreated = (newStore) => {
-    setStore(newStore);
-    setHasStore(true);
     setIsCreateStoreModalOpen(false);
+    refetchStore();
+    refetchPreviewProducts();
   };
 
   // Toggle website status
   const toggleWebsiteStatus = async () => {
     if (!store) return;
     
-    setIsTogglingWebsite(true);
-    
     try {
       const newStatus = store.ivmaWebsite.status === 'active' ? 'inactive' : 'active';
-      const response = await secureApiCall('/api/stores/website/toggle', {
-        method: 'PUT',
-        body: JSON.stringify({ status: newStatus })
-      });
-
-      if (response.success) {
-        setStore(response.data);
-      } else {
-        console.error('Failed to toggle website status:', response.message);
-      }
+      await toggleWebsite(newStatus);
     } catch (error) {
       console.error('Error toggling website status:', error);
-    } finally {
-      setIsTogglingWebsite(false);
+      alert('Failed to toggle website status. Please try again.');
     }
   };
 
@@ -160,7 +107,7 @@ export default function WebsitePage() {
   const websiteStatus = getWebsiteStatusInfo();
 
   const handleBrandingUpdated = (updatedStore) => {
-    setStore(updatedStore);
+    refetchStore();
     setIsBrandingModalOpen(false);
   };
 
@@ -172,8 +119,8 @@ export default function WebsitePage() {
     }).format(amount);
   };
 
-  // Get social media links with proper formatting
-  const getSocialMediaLinks = () => {
+  // Get social media links with proper formatting - memoized (returns array, not function)
+  const socialMediaLinks = useMemo(() => {
     if (!store?.socialMedia) return [];
 
     const socialLinks = [];
@@ -181,7 +128,7 @@ export default function WebsitePage() {
 
     // WhatsApp
     if (socials.whatsapp) {
-      const whatsappNumber = socials.whatsapp.replace(/\D/g, ''); // Remove non-digits
+      const whatsappNumber = socials.whatsapp.replace(/\D/g, '');
       const formattedNumber = whatsappNumber.startsWith('234') ? whatsappNumber : `234${whatsappNumber.startsWith('0') ? whatsappNumber.slice(1) : whatsappNumber}`;
       
       socialLinks.push({
@@ -234,27 +181,63 @@ export default function WebsitePage() {
     }
 
     return socialLinks;
-  };
+  }, [store?.socialMedia]);
 
   // Handle social media link click
   const handleSocialClick = (socialLink) => {
     window.open(socialLink.url, '_blank', 'noopener,noreferrer');
   };
 
-  if (loading) {
+  // Show loading skeleton only on initial load
+  if (isInitialLoading) {
     return (
       <DashboardLayout title="Website Management" subtitle="Manage your online store presence">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading website information...</p>
+        <div className="space-y-8">
+          {/* Header Skeleton */}
+          <div className="bg-white rounded-2xl p-6 border border-gray-100 animate-pulse">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <div className="w-14 h-14 bg-gray-200 rounded-2xl"></div>
+                <div className="space-y-2">
+                  <div className="h-6 w-32 bg-gray-200 rounded"></div>
+                  <div className="h-4 w-48 bg-gray-200 rounded"></div>
+                </div>
+              </div>
+              <div className="flex items-center space-x-4">
+                <div className="h-10 w-48 bg-gray-200 rounded-xl"></div>
+                <div className="h-6 w-24 bg-gray-200 rounded-full"></div>
+              </div>
+            </div>
+          </div>
+
+          {/* Content Grid Skeleton */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2">
+              <div className="bg-white rounded-2xl p-6 border border-gray-100 animate-pulse">
+                <div className="h-6 w-40 bg-gray-200 rounded mb-6"></div>
+                <div className="h-96 bg-gray-200 rounded-xl"></div>
+              </div>
+            </div>
+            <div className="space-y-6">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="bg-white rounded-2xl p-6 border border-gray-100 animate-pulse">
+                  <div className="h-6 w-32 bg-gray-200 rounded mb-4"></div>
+                  <div className="space-y-3">
+                    <div className="h-4 bg-gray-200 rounded"></div>
+                    <div className="h-4 bg-gray-200 rounded"></div>
+                    <div className="h-4 bg-gray-200 rounded"></div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </DashboardLayout>
     );
   }
 
-  if (!hasStore) {
+  // Show create store prompt if no store
+  if (hasStore === false) {
     return (
       <DashboardLayout title="Website Management" subtitle="Manage your online store presence">
         <div className="flex items-center justify-center min-h-[400px]">
@@ -271,7 +254,6 @@ export default function WebsitePage() {
           </div>
         </div>
 
-        {/* Create Store Modal */}
         <CreateStoreModal
           isOpen={isCreateStoreModalOpen}
           onStoreCreated={handleStoreCreated}
@@ -299,13 +281,13 @@ export default function WebsitePage() {
         <WebsiteSettingsView
           onBack={() => setCurrentView('main')}
           store={store}
-          onStoreUpdated={setStore}
+          onStoreUpdated={refetchStore}
         />
       </DashboardLayout>
     );
   }
 
-  // Main website management view
+  // Main website management view - no flickering because data is cached
   return (
     <DashboardLayout title="Website Management" subtitle="Manage your online store presence">
       {/* Website Status Toggle */}
@@ -513,7 +495,22 @@ export default function WebsitePage() {
                   {/* Products Grid */}
                   <div className="px-6 py-6">
                     <div className="max-w-4xl mx-auto">
-                      {previewProducts.length > 0 ? (
+                      {isLoadingPreviewProducts ? (
+                        // Products loading skeleton
+                        <div className="grid grid-cols-3 gap-4">
+                          {[1, 2, 3].map((i) => (
+                            <div key={i} className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100 animate-pulse">
+                              <div className="bg-gray-200 aspect-square"></div>
+                              <div className="p-3 space-y-2">
+                                <div className="h-3 bg-gray-200 rounded w-2/3"></div>
+                                <div className="h-4 bg-gray-200 rounded"></div>
+                                <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+                                <div className="h-8 bg-gray-200 rounded mt-3"></div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : previewProducts.length > 0 ? (
                         <div className="grid grid-cols-3 gap-4">
                           {previewProducts.map((product, index) => (
                             <div key={product._id || index} className="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow border border-gray-100">
@@ -609,7 +606,7 @@ export default function WebsitePage() {
                       )}
 
                       {/* Add products notice */}
-                      {previewProducts.length === 0 && (
+                      {previewProducts.length === 0 && !isLoadingPreviewProducts && (
                         <div className="mt-6 p-4 bg-blue-50 rounded-xl border border-blue-200">
                           <p className="text-blue-800 text-xs text-center">
                             <strong>Preview Mode:</strong> Add products to your inventory to see them displayed here.
@@ -628,9 +625,9 @@ export default function WebsitePage() {
                       <p className="text-xs text-gray-500">
                         © {new Date().getFullYear()} {store.storeName}. All rights reserved.
                       </p>
-                      {getSocialMediaLinks().length > 0 && (
+                      {socialMediaLinks.length > 0 && (
                         <div className="flex items-center justify-center space-x-3 mt-3">
-                          {getSocialMediaLinks().slice(0, 3).map((social, idx) => {
+                          {socialMediaLinks.slice(0, 3).map((social, idx) => {
                             const IconComponent = social.icon;
                             return (
                               <div key={idx} className="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center">
@@ -780,7 +777,7 @@ export default function WebsitePage() {
                 </span>
               </div>
 
-              <div className="flex items-center justify-between">
+              {/* <div className="flex items-center justify-between">
                 <div className="flex items-center">
                   <Package className="w-4 h-4 mr-2 text-gray-500" />
                   <span className="text-sm text-gray-600">Products Listed</span>
@@ -788,7 +785,7 @@ export default function WebsitePage() {
                 <span className="text-sm font-medium text-gray-900">
                   {previewProducts.length}
                 </span>
-              </div>
+              </div> */}
               
               {store.ivmaWebsite?.metrics?.lastVisit && (
                 <div className="flex items-center justify-between">
@@ -814,14 +811,14 @@ export default function WebsitePage() {
           </div>
 
           {/* Social Media Links */}
-          {getSocialMediaLinks().length > 0 && (
+          {socialMediaLinks.length > 0 && (
             <div className="bg-white rounded-2xl p-6 border border-gray-100">
               <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                 <Share2 className="w-5 h-5 mr-2" />
                 Social Media Links
               </h3>
               <div className="space-y-3">
-                {getSocialMediaLinks().map((social, index) => {
+                {socialMediaLinks.map((social, index) => {
                   const IconComponent = social.icon;
                   return (
                     <button
@@ -886,7 +883,7 @@ export default function WebsitePage() {
               </button>
               
               {/* Share & Promote with Social Media dropdown */}
-              {getSocialMediaLinks().length > 0 ? (
+              {socialMediaLinks.length > 0 ? (
                 <div className="relative">
                   <button 
                     onClick={() => setIsShareDropdownOpen(!isShareDropdownOpen)}
@@ -899,7 +896,7 @@ export default function WebsitePage() {
                   
                   {isShareDropdownOpen && (
                     <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg z-10">
-                      {getSocialMediaLinks().map((social, index) => {
+                      {socialMediaLinks.map((social, index) => {
                         const IconComponent = social.icon;
                         return (
                           <button
@@ -958,7 +955,7 @@ export default function WebsitePage() {
                 <p>
                   <strong>Product Display:</strong> Control what products appear on your website using "Manage Website Inventory".
                 </p>
-                {getSocialMediaLinks().length > 0 && (
+                {socialMediaLinks.length > 0 && (
                   <p>
                     <strong>Social Media:</strong> Share your website on your social media platforms to drive more traffic and sales.
                   </p>

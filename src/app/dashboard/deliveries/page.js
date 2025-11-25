@@ -12,8 +12,6 @@ import {
   Package,
   ChevronLeft,
   ChevronRight,
-  Plus,
-  Filter,
   CheckCircle,
   AlertTriangle,
   XCircle,
@@ -224,95 +222,79 @@ export default function DeliveriesPage() {
 
   return (
     <DashboardLayout title="Delivery Calendar" subtitle="Manage your delivery schedule">
-      {/* Stats Cards */}
+      {/* Stats Cards - Minimalistic */}
       {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-2xl p-6 border border-gray-100">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-white rounded-xl p-5 border border-gray-100">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600 mb-1">Today's Deliveries</p>
+                <p className="text-xs text-gray-500 mb-1">Today</p>
                 <p className="text-2xl font-bold text-gray-900">{stats.todayDeliveries}</p>
               </div>
-              <div className="p-3 bg-blue-100 rounded-xl">
-                <Truck className="w-6 h-6 text-blue-600" />
-              </div>
+              <Truck className="w-5 h-5 text-blue-600" />
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl p-6 border border-gray-100">
+          <div className="bg-white rounded-xl p-5 border border-gray-100">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-orange-700 mb-1 font-medium">Pending</p>
-                <p className="text-3xl font-bold text-orange-900">{stats.scheduledDeliveries}</p>
+                <p className="text-xs text-gray-500 mb-1">Scheduled</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.scheduledDeliveries}</p>
               </div>
-              <div className="p-3 bg-orange-100 rounded-xl">
-                <Clock className="w-6 h-6 text-orange-600" />
-              </div>
+              <Clock className="w-5 h-5 text-orange-600" />
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl p-6 border border-gray-100">
+          <div className="bg-white rounded-xl p-5 border border-gray-100">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-green-700 mb-1 font-medium">Completed</p>
-                <p className="text-3xl font-bold text-green-900">{stats.completedDeliveries}</p>
+                <p className="text-xs text-gray-500 mb-1">Completed</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.completedDeliveries}</p>
               </div>
-              <div className="p-3 bg-green-100 rounded-xl">
-                <CheckCircle className="w-6 h-6 text-green-600" />
-              </div>
+              <CheckCircle className="w-5 h-5 text-green-600" />
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl p-6 border border-gray-100">
+          <div className="bg-white rounded-xl p-5 border border-gray-100">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-red-700 mb-1 font-medium">Overdue</p>
-                <p className="text-3xl font-bold text-red-900">{stats.overdueDeliveries}</p>
+                <p className="text-xs text-gray-500 mb-1">Overdue</p>
+                <p className="text-2xl font-bold text-red-600">{stats.overdueDeliveries}</p>
               </div>
-              <div className="p-4 bg-red-600 rounded-2xl shadow-lg">
-                <AlertTriangle className="w-7 h-7 text-white" />
-              </div>
+              <AlertTriangle className="w-5 h-5 text-red-600" />
             </div>
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Calendar Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Calendar Section - Minimalistic */}
         <div className="lg:col-span-2">
-          <div className="bg-gradient-to-br from-white to-gray-50 rounded-3xl p-8 border border-gray-200 shadow-lg">
+          <div className="bg-white rounded-2xl p-6 border border-gray-100">
             {/* Calendar Header */}
-            <div className="flex items-center justify-between mb-8">
-              <div className="flex items-center space-x-4">
-                <div className="p-3 bg-teal-100 rounded-2xl">
-                  <Calendar className="w-6 h-6 text-teal-600" />
-                </div>
-                <div>
-                  <h3 className="text-2xl font-bold text-gray-900">
-                    {monthNames[currentDate.getMonth()]}
-                  </h3>
-                  <p className="text-sm text-gray-500">{currentDate.getFullYear()}</p>
-                </div>
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">
+                  {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">Select a date to view deliveries</p>
               </div>
-              <div className="flex items-center space-x-3">
-                <div className="flex items-center bg-white rounded-xl border border-gray-200 shadow-sm">
-                  <button
-                    onClick={() => navigateMonth(-1)}
-                    className="p-3 hover:bg-gray-50 rounded-l-xl transition-colors"
-                  >
-                    <ChevronLeft className="w-5 h-5 text-gray-600" />
-                  </button>
-                  <div className="w-px h-6 bg-gray-200"></div>
-                  <button
-                    onClick={() => navigateMonth(1)}
-                    className="p-3 hover:bg-gray-50 rounded-r-xl transition-colors"
-                  >
-                    <ChevronRight className="w-5 h-5 text-gray-600" />
-                  </button>
-                </div>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => navigateMonth(-1)}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <ChevronLeft className="w-5 h-5 text-gray-600" />
+                </button>
+                <button
+                  onClick={() => navigateMonth(1)}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <ChevronRight className="w-5 h-5 text-gray-600" />
+                </button>
                 <button
                   onClick={() => setCurrentDate(new Date())}
-                  className="px-5 py-3 text-sm font-medium bg-gradient-to-r from-teal-600 to-teal-700 text-white rounded-xl hover:from-teal-700 hover:to-teal-800 transition-all shadow-md hover:shadow-lg"
+                  className="px-4 py-2 text-xs font-medium bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors"
                 >
                   Today
                 </button>
@@ -320,9 +302,9 @@ export default function DeliveriesPage() {
             </div>
 
             {/* Calendar Grid */}
-            <div className="grid grid-cols-7 gap-2 mb-3">
-              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                <div key={day} className="p-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">
+            <div className="grid grid-cols-7 gap-2 mb-2">
+              {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, idx) => (
+                <div key={idx} className="p-2 text-center text-xs font-medium text-gray-500">
                   {day}
                 </div>
               ))}
@@ -343,22 +325,22 @@ export default function DeliveriesPage() {
                   <button
                     key={index}
                     onClick={() => handleDateSelect(day)}
-                    className={`aspect-square p-2 text-sm font-medium rounded-2xl transition-all relative flex items-center justify-center ${
+                    className={`aspect-square p-2 text-sm font-medium rounded-lg transition-all relative flex items-center justify-center ${
                       isSelected
-                        ? 'bg-gradient-to-br from-teal-600 to-teal-700 text-white shadow-teal-200 scale-105'
+                        ? 'bg-teal-600 text-white'
                         : isTodayDate
-                        ? 'bg-gradient-to-br from-teal-100 to-teal-50 text-teal-800 border-2 border-teal-300'
+                        ? 'bg-teal-100 text-teal-800 border border-teal-300'
                         : deliveriesCount > 0
-                        ? 'bg-white hover:bg-teal-50 text-gray-900 border border-teal-200 hover:border-teal-300 shadow-sm'
-                        : 'bg-white hover:bg-gray-50 text-gray-600 border border-gray-100'
+                        ? 'bg-gray-100 text-gray-900 hover:bg-gray-200'
+                        : 'text-gray-600 hover:bg-gray-50'
                     }`}
                   >
-                    <span className={isSelected || isTodayDate ? 'font-bold' : ''}>{day}</span>
+                    {day}
                     {deliveriesCount > 0 && (
-                      <div className={`absolute -top-1 -right-1 min-w-[22px] h-[22px] px-1 text-xs font-bold rounded-full flex items-center justify-center shadow-md ${
+                      <div className={`absolute -top-1 -right-1 w-4 h-4 text-xs font-bold rounded-full flex items-center justify-center ${
                         isSelected 
                           ? 'bg-white text-teal-600' 
-                          : 'bg-gradient-to-br from-teal-600 to-teal-700 text-white'
+                          : 'bg-teal-600 text-white'
                       }`}>
                         {deliveriesCount}
                       </div>
@@ -367,61 +349,36 @@ export default function DeliveriesPage() {
                 );
               })}
             </div>
-
-            {/* Legend */}
-            <div className="flex items-center justify-center space-x-6 mt-8 pt-6 border-t border-gray-200">
-              <div className="flex items-center space-x-2">
-                <div className="w-4 h-4 bg-gradient-to-br from-teal-100 to-teal-50 border-2 border-teal-300 rounded"></div>
-                <span className="text-xs text-gray-600">Today</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <div className="w-4 h-4 bg-gradient-to-br from-teal-600 to-teal-700 rounded shadow-sm"></div>
-                <span className="text-xs text-gray-600">Selected</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <div className="w-4 h-4 bg-white border border-teal-200 rounded relative">
-                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-teal-600 rounded-full"></div>
-                </div>
-                <span className="text-xs text-gray-600">Has Deliveries</span>
-              </div>
-            </div>
           </div>
         </div>
 
-        {/* Selected Date Deliveries */}
-        <div className="space-y-6">
-          <div className="bg-gradient-to-br from-white to-gray-50 rounded-3xl p-6 border border-gray-200 shadow-lg sticky top-6">
-            <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-200">
+        {/* Selected Date Deliveries - Minimalistic */}
+        <div>
+          <div className="bg-white rounded-2xl p-6 border border-gray-100 sticky top-6">
+            <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
               <div>
-                <h3 className="text-lg font-bold text-gray-900">
+                <h3 className="text-base font-semibold text-gray-900">
                   {selectedDate.toLocaleDateString('en-US', {
-                    weekday: 'short',
                     month: 'short',
-                    day: 'numeric'
+                    day: 'numeric',
+                    year: 'numeric'
                   })}
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {selectedDate.getFullYear()}
+                  {deliveries.length} {deliveries.length === 1 ? 'delivery' : 'deliveries'}
                 </p>
               </div>
-              <div className="flex items-center space-x-2">
-                <span className="px-4 py-2 bg-gradient-to-r from-teal-600 to-teal-700 text-white text-sm font-semibold rounded-xl shadow-md">
-                  {deliveries.length}
-                </span>
-                <span className="text-sm text-gray-600 font-medium">
-                  {deliveries.length === 1 ? 'delivery' : 'deliveries'}
-                </span>
-              </div>
+              <span className="px-3 py-1.5 bg-teal-100 text-teal-700 text-sm font-bold rounded-lg">
+                {deliveries.length}
+              </span>
             </div>
 
             <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
               {deliveries.length === 0 ? (
                 <div className="text-center py-12">
-                  <div className="w-20 h-20 bg-gradient-to-br from-gray-100 to-gray-50 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-inner">
-                    <Calendar className="w-10 h-10 text-gray-300" />
-                  </div>
-                  <p className="text-gray-600 font-medium mb-1">No deliveries scheduled</p>
-                  <p className="text-gray-400 text-xs">Select a date with deliveries to view details</p>
+                  <Calendar className="w-12 h-12 text-gray-200 mx-auto mb-2" />
+                  <p className="text-sm text-gray-500">No deliveries</p>
+                  <p className="text-xs text-gray-400 mt-1">Select another date</p>
                 </div>
               ) : (
                 deliveries.map((delivery) => {
@@ -429,64 +386,24 @@ export default function DeliveriesPage() {
                   return (
                     <div 
                       key={delivery._id} 
-                      className="bg-white border-2 border-gray-100 rounded-2xl p-4 hover:border-teal-300 hover:shadow-md transition-all cursor-pointer group"
+                      className="border border-gray-100 rounded-xl p-3 hover:border-teal-200 hover:bg-teal-50/30 transition-all cursor-pointer"
                       onClick={() => handleViewDetails(delivery)}
                     >
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center space-x-2">
-                          <div className={`p-1.5 rounded-lg ${getStatusColor(delivery.status)}`}>
-                            <StatusIcon className="w-3.5 h-3.5" />
-                          </div>
-                          <span className={`px-2.5 py-1 text-xs font-semibold rounded-lg ${getStatusColor(delivery.status)}`}>
-                            {delivery.status.replace('_', ' ')}
-                          </span>
-                        </div>
-                        <button
-                          className="p-2 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                          title="View details"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
+                      <div className="flex items-start justify-between mb-2">
+                        <span className={`px-2 py-0.5 text-xs font-semibold rounded-md ${getStatusColor(delivery.status)}`}>
+                          {delivery.status.replace('_', ' ')}
+                        </span>
+                        <Eye className="w-4 h-4 text-gray-400" />
                       </div>
 
-                      <div className="space-y-2 mb-3">
-                        <div className="flex items-center space-x-2">
-                          <div className="p-1.5 bg-gray-100 rounded-lg">
-                            <User className="w-3 h-3 text-gray-600" />
-                          </div>
-                          <p className="text-sm font-semibold text-gray-900">{delivery.customer.name}</p>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <div className="p-1.5 bg-gray-100 rounded-lg">
-                            <Phone className="w-3 h-3 text-gray-600" />
-                          </div>
-                          <p className="text-xs text-gray-600">{delivery.customer.phone}</p>
-                        </div>
-                        <div className="flex items-start space-x-2">
-                          <div className="p-1.5 bg-gray-100 rounded-lg mt-0.5">
-                            <MapPin className="w-3 h-3 text-gray-600" />
-                          </div>
-                          <p className="text-xs text-gray-600 line-clamp-2 flex-1">{delivery.deliveryAddress.fullAddress}</p>
-                        </div>
-                      </div>
+                      <p className="text-sm font-semibold text-gray-900 mb-2">
+                        {delivery.customer.name}
+                      </p>
 
-                      <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                        <div className="flex items-center space-x-3">
-                          <div className="flex items-center space-x-1.5">
-                            <Package className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="text-xs text-gray-600 font-medium">{delivery.items.length} items</span>
-                          </div>
-                          {delivery.deliveryType === 'pos_sale' && (
-                            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-semibold rounded-md">
-                              POS
-                            </span>
-                          )}
-                          {delivery.deliveryType === 'order' && (
-                            <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-semibold rounded-md">
-                              Order
-                            </span>
-                          )}
-                        </div>
+                      <div className="flex items-center justify-between pt-2 border-t border-gray-50">
+                        <span className="text-xs text-gray-500">
+                          {delivery.items.length} items
+                        </span>
                         <span className="text-sm font-bold text-gray-900">
                           {formatCurrency(delivery.totalAmount)}
                         </span>
@@ -509,18 +426,17 @@ export default function DeliveriesPage() {
 
       <style jsx global>{`
         .custom-scrollbar::-webkit-scrollbar {
-          width: 6px;
+          width: 5px;
         }
         .custom-scrollbar::-webkit-scrollbar-track {
-          background: #f1f5f9;
-          border-radius: 10px;
+          background: transparent;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #0d9488;
+          background: #cbd5e1;
           border-radius: 10px;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: #0f766e;
+          background: #94a3b8;
         }
       `}</style>
     </DashboardLayout>

@@ -6,6 +6,7 @@ import Store from '@/models/Store';
 import User from '@/models/User';
 import InventoryBatch from '@/models/InventoryBatch';
 import Inventory from '@/models/Inventory';
+import Customer from '@/models/Customer';
 
 // GET - Fetch orders for the authenticated user's stores
 export async function GET(req) {
@@ -21,117 +22,79 @@ export async function GET(req) {
     }
 
     const { searchParams } = new URL(req.url);
-    const status = searchParams.get('status');
-    const paymentStatus = searchParams.get('paymentStatus');
-    const search = searchParams.get('search');
     const page = parseInt(searchParams.get('page')) || 1;
-    const limit = parseInt(searchParams.get('limit')) || 20;
+    const limit = parseInt(searchParams.get('limit')) || 10;
+    const status = searchParams.get('status'); // Can be comma-separated: "pending,confirmed"
+    const search = searchParams.get('search');
+    const sortBy = searchParams.get('sortBy') || 'createdAt';
+    const sortOrder = searchParams.get('sortOrder') === 'asc' ? 1 : -1;
+    const createdFrom = searchParams.get('createdFrom'); // Add date range support
+    const createdTo = searchParams.get('createdTo');
 
-    // Build query - find orders for items from user's stores
+    // Build query
     const query = {
       'items.seller': user._id
     };
 
+    // Filter by status (support multiple statuses)
     if (status) {
-      query.status = status;
+      const statuses = status.split(',').map(s => s.trim());
+      query.status = { $in: statuses };
     }
 
-    if (paymentStatus) {
-      query['paymentInfo.status'] = paymentStatus;
+    // Filter by date range
+    if (createdFrom || createdTo) {
+      query.createdAt = {};
+      if (createdFrom) {
+        query.createdAt.$gte = new Date(createdFrom);
+      }
+      if (createdTo) {
+        query.createdAt.$lte = new Date(createdTo);
+      }
     }
 
+    // Search by order number or customer name
     if (search) {
       query.$or = [
         { orderNumber: { $regex: search, $options: 'i' } },
-        { 'customerSnapshot.email': { $regex: search, $options: 'i' } },
         { 'customerSnapshot.firstName': { $regex: search, $options: 'i' } },
         { 'customerSnapshot.lastName': { $regex: search, $options: 'i' } },
-        { 'items.productSnapshot.productName': { $regex: search, $options: 'i' } }
+        { 'customerSnapshot.email': { $regex: search, $options: 'i' } }
       ];
     }
 
     const skip = (page - 1) * limit;
 
-    // Fetch orders with basic population
+    // Get total count for pagination
+    const total = await Order.countDocuments(query);
+
+    // Fetch orders
     const orders = await Order.find(query)
-      .sort({ createdAt: -1 })
+      .sort({ [sortBy]: sortOrder })
       .skip(skip)
       .limit(limit)
-      .populate({
-        path: 'items.store',
-        select: 'storeName storePhone storeEmail'
-      })
-      .populate({
-        path: 'items.product',
-        select: 'productName sku image category'
-      })
-      .lean(); // Use lean() for better performance
-
-    // Get order statistics with proper error handling
-    let stats = {
-      totalOrders: 0,
-      totalRevenue: 0,
-      pendingOrders: 0,
-      completedOrders: 0,
-      cancelledOrders: 0
-    };
-
-    try {
-      const statsAggregation = await Order.aggregate([
-        { $match: { 'items.seller': user._id } },
-        {
-          $group: {
-            _id: null,
-            totalOrders: { $sum: 1 },
-            totalRevenue: { $sum: '$totalAmount' },
-            pendingOrders: {
-              $sum: {
-                $cond: [
-                  { $in: ['$status', ['pending', 'confirmed', 'processing']] },
-                  1,
-                  0
-                ]
-              }
-            },
-            completedOrders: {
-              $sum: {
-                $cond: [{ $eq: ['$status', 'delivered'] }, 1, 0]
-              }
-            },
-            cancelledOrders: {
-              $sum: {
-                $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0]
-              }
-            }
-          }
-        }
-      ]);
-
-      if (statsAggregation.length > 0) {
-        stats = statsAggregation[0];
-      }
-    } catch (statsError) {
-      console.error('Error fetching order stats:', statsError);
-      // Continue with default stats if aggregation fails
-    }
+      .populate('customer', 'firstName lastName email phone')
+      .populate('items.product', 'productName sku image')
+      .lean();
 
     return NextResponse.json({
       success: true,
       data: {
         orders,
-        stats,
         pagination: {
           page,
           limit,
-          total: orders.length
+          total,
+          pages: Math.ceil(total / limit)
         }
-      }
+      },
+      total // Add total at root level for easy access
     });
 
   } catch (error) {
-    console.error('Orders fetch error:', error);
+    console.error('Get orders error:', error);
     return NextResponse.json(
-      { success: false, message: 'Internal server error' },
+      { success: false, message: 'Internal server error', error: error.message },
       { status: 500 }
     );
   }

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import ReceiptModal from "@/components/dashboard/ReceiptModal";
 import CreateStoreModal from "@/components/dashboard/CreateStoreModal";
@@ -7,6 +7,7 @@ import DeliveryScheduleModal from "@/components/dashboard/DeliveryScheduleModal"
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import useOrderProcessingStore from "@/store/orderProcessingStore";
+import { usePOSData } from "@/hooks/usePOSData";
 import { 
   Search, 
   Plus, 
@@ -44,8 +45,20 @@ export default function POSPage() {
     completeOrderProcessing
   } = useOrderProcessingStore();
 
-  const [inventoryItems, setInventoryItems] = useState([]);
-  const [filteredItems, setFilteredItems] = useState([]);
+  // Use TanStack Query for data fetching
+  const {
+    hasStore,
+    store,
+    inventoryItems,
+    isLoading,
+    processSale: processSaleMutation,
+    scheduleDelivery: scheduleDeliveryMutation,
+    updateOrderStatus: updateOrderStatusMutation,
+    isProcessingSale: isSaleProcessing,
+    refetchInventory,
+    refetchStore,
+  } = usePOSData();
+
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [cart, setCart] = useState([]);
@@ -54,95 +67,29 @@ export default function POSPage() {
   const [amountReceived, setAmountReceived] = useState('');
   const [discount, setDiscount] = useState(0);
   const [tax, setTax] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [isProcessingSale, setIsProcessingSale] = useState(false);
   const [completedSale, setCompletedSale] = useState(null);
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
-  const [hasStore, setHasStore] = useState(null); // null = loading, true = has store, false = no store
-  const [store, setStore] = useState(null);
   const [isCreateStoreModalOpen, setIsCreateStoreModalOpen] = useState(false);
   const [isDeliveryPromptOpen, setIsDeliveryPromptOpen] = useState(false);
   const [isDeliveryModalOpen, setIsDeliveryModalOpen] = useState(false);
   const [pendingSaleForDelivery, setPendingSaleForDelivery] = useState(null);
 
-  // Check if user has a store
-  const checkUserStore = async () => {
-    try {
-      const response = await secureApiCall('/api/stores');
-      if (response.success) {
-        if (response.hasStore) {
-          setHasStore(true);
-          setStore(response.data);
-        } else {
-          setHasStore(false);
-          setIsCreateStoreModalOpen(true);
-        }
-      }
-    } catch (error) {
-      console.error('Error checking user store:', error);
-      setHasStore(false);
+  // Show create store modal if no store
+  useEffect(() => {
+    if (hasStore === false) {
       setIsCreateStoreModalOpen(true);
     }
-  };
-
-  // Fetch inventory items
-  const fetchInventoryItems = async () => {
-    try {
-      setLoading(true);
-      const response = await secureApiCall('/api/inventory');
-      if (response.success) {
-        const activeItems = response.data.filter(item => 
-          item.status === 'Active' && item.quantityInStock > 0
-        );
-        
-        // Use the enhanced batch pricing if available
-        const itemsWithBatchPricing = activeItems.map(item => ({
-          ...item,
-          // Use current batch pricing if available, otherwise fall back to item pricing
-          sellingPrice: item.currentSellingPrice || item.sellingPrice,
-          costPrice: item.currentCostPrice || item.costPrice,
-          // Keep original prices for reference
-          originalSellingPrice: item.sellingPrice,
-          originalCostPrice: item.costPrice,
-          // Add batch info for display
-          hasBatchPricing: !!(item.currentSellingPrice && item.currentCostPrice),
-          batchPricing: item.batchPricing || null
-        }));
-        
-        setInventoryItems(itemsWithBatchPricing);
-        setFilteredItems(itemsWithBatchPricing);
-      }
-    } catch (error) {
-      console.error('Error fetching inventory:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      await checkUserStore();
-      // Only fetch inventory if user has a store
-      if (hasStore !== false) {
-        await fetchInventoryItems();
-      }
-      setLoading(false);
-    };
-    loadData();
   }, [hasStore]);
 
   // Handle store creation
   const handleStoreCreated = (newStore) => {
-    setStore(newStore);
-    setHasStore(true);
     setIsCreateStoreModalOpen(false);
-    // Fetch inventory items after store is created
-    fetchInventoryItems();
+    refetchStore();
+    refetchInventory();
   };
 
-  // Filter items based on search and category
-  useEffect(() => {
+  // Filter items using useMemo instead of useEffect to prevent infinite loop
+  const filteredItems = useMemo(() => {
     let filtered = inventoryItems;
 
     if (searchTerm) {
@@ -157,11 +104,13 @@ export default function POSPage() {
       filtered = filtered.filter(item => item.category === selectedCategory);
     }
 
-    setFilteredItems(filtered);
+    return filtered;
   }, [searchTerm, selectedCategory, inventoryItems]);
 
-  // Get unique categories
-  const categories = [...new Set(inventoryItems.map(item => item.category))];
+  // Get unique categories using useMemo
+  const categories = useMemo(() => {
+    return [...new Set(inventoryItems.map(item => item.category))];
+  }, [inventoryItems]);
 
   // Add item to cart
   const addToCart = (item) => {
@@ -230,26 +179,18 @@ export default function POSPage() {
   // Handle delivery scheduling
   const handleScheduleDelivery = async (deliveryData) => {
     try {
-      const response = await secureApiCall('/api/deliveries', {
-        method: 'POST',
-        body: JSON.stringify({
-          saleId: pendingSaleForDelivery._id,
-          transactionId: pendingSaleForDelivery.transactionId,
-          orderId: pendingSaleForDelivery.linkedOrderId || null,
-          deliveryType: pendingSaleForDelivery.isFromOrder ? 'order' : 'pos_sale',
-          ...deliveryData
-        })
+      await scheduleDeliveryMutation({
+        saleId: pendingSaleForDelivery._id,
+        transactionId: pendingSaleForDelivery.transactionId,
+        orderId: pendingSaleForDelivery.linkedOrderId || null,
+        deliveryType: pendingSaleForDelivery.isFromOrder ? 'order' : 'pos_sale',
+        ...deliveryData
       });
 
-      if (response.success) {
-        alert('Delivery scheduled successfully!');
-        setIsDeliveryModalOpen(false);
-        setPendingSaleForDelivery(null);
-        // Open receipt modal after scheduling delivery
-        setIsReceiptModalOpen(true);
-      } else {
-        throw new Error(response.message);
-      }
+      alert('Delivery scheduled successfully!');
+      setIsDeliveryModalOpen(false);
+      setPendingSaleForDelivery(null);
+      setIsReceiptModalOpen(true);
     } catch (error) {
       console.error('Error scheduling delivery:', error);
       alert('Error scheduling delivery: ' + error.message);
@@ -260,32 +201,13 @@ export default function POSPage() {
   const handleSkipDelivery = () => {
     setIsDeliveryPromptOpen(false);
     setPendingSaleForDelivery(null);
-    // Open receipt modal directly
     setIsReceiptModalOpen(true);
   };
 
-  // Add the missing calculateNewStock function
-  const calculateNewStock = () => {
-    // This function should calculate new stock based on current cart
-    // Return current totals for display purposes
-    return {
-      subtotal: cart.reduce((sum, item) => sum + (item.sellingPrice * item.quantity), 0),
-      total: cart.reduce((sum, item) => sum + (item.sellingPrice * item.quantity), 0),
-      itemCount: cart.length
-    };
-  };
-
-  // Add missing getSelectedBatchInfo function if needed
-  const getSelectedBatchInfo = () => {
-    // This would return batch information if using batch system
-    // For now, return null as POS doesn't use batch selection
-    return null;
-  };
-
-  // Process sale - updated with delivery prompt
+  // Process sale
   const processSale = async () => {
     if (!isProcessingOrder) {
-      // Regular POS sale - SHOULD deduct inventory
+      // Regular POS sale
       if (cart.length === 0) {
         alert('Please add items to cart before completing sale');
         return;
@@ -296,10 +218,7 @@ export default function POSPage() {
         return;
       }
 
-      setIsProcessingSale(true);
-
       try {
-        // Ensure all values are properly calculated and formatted
         const calculatedSubtotal = cart.reduce((sum, item) => sum + (Number(item.sellingPrice) * Number(item.quantity)), 0);
         const calculatedDiscountAmount = (calculatedSubtotal * Number(discount)) / 100;
         const calculatedTaxAmount = ((calculatedSubtotal - calculatedDiscountAmount) * Number(tax)) / 100;
@@ -324,55 +243,30 @@ export default function POSPage() {
           amountReceived: Number(amountReceived) || calculatedTotal,
           balance: calculatedBalance,
           saleDate: new Date().toISOString(),
-          // Ensure soldBy is set
-          soldBy: null, // Will be set by the API using the authenticated user
-          // Regular sale flags
+          soldBy: null,
           isFromOrder: false,
           isOrderProcessing: false
         };
 
-        console.log('Sending sale data:', {
-          subtotal: saleData.subtotal,
-          total: saleData.total,
-          itemCount: saleData.items.length
-        });
-
-        const response = await secureApiCall('/api/pos/sales', {
-          method: 'POST',
-          body: JSON.stringify(saleData)
-        });
+        const response = await processSaleMutation(saleData);
 
         if (response.success) {
-          console.log('Sale response:', response);
-          // Refresh inventory data
-          await fetchInventoryItems();
-          
-          // Prepare completed sale data for receipt modal with proper transactionId
           const completedSaleData = {
             ...saleData,
             _id: response.data._id,
-            transactionId: response.data.transactionId, // Use the generated transactionId
+            transactionId: response.data.transactionId,
             saleDate: response.data.saleDate || new Date().toISOString(),
             status: response.data.status || 'completed'
           };
           
           setCompletedSale(completedSaleData);
           setPendingSaleForDelivery(completedSaleData);
-          
-          // Clear cart
           clearCart();
-          
-          // Show delivery prompt instead of receipt modal immediately
           setIsDeliveryPromptOpen(true);
-          
-        } else {
-          alert('Failed to process sale: ' + response.message);
         }
       } catch (error) {
         console.error('Error processing sale:', error);
         alert('Error processing sale: ' + error.message);
-      } finally {
-        setIsProcessingSale(false);
       }
     } else {
       // Processing an order - call the order completion handler
@@ -392,8 +286,6 @@ export default function POSPage() {
       alert('Amount received is less than total amount');
       return;
     }
-
-    setIsProcessingSale(true);
 
     try {
       // Ensure all values are properly calculated and formatted
@@ -422,77 +314,46 @@ export default function POSPage() {
         amountReceived: Number(amountReceived) || calculatedTotal,
         balance: calculatedBalance,
         saleDate: new Date().toISOString(),
-        // Ensure soldBy is set
-        soldBy: null, // Will be set by the API using the authenticated user
-        // Link to original order
+        soldBy: null,
         linkedOrderId: processingOrder._id,
         isOrderProcessing: true,
         isFromOrder: true,
         orderNumber: processingOrder.orderNumber
       };
 
-      console.log('Sending order sale data:', {
-        subtotal: saleData.subtotal,
-        total: saleData.total,
-        orderNumber: saleData.orderNumber
-      });
-
-      const saleResponse = await secureApiCall('/api/pos/sales', {
-        method: 'POST',
-        body: JSON.stringify(saleData)
-      });
+      const saleResponse = await processSaleMutation(saleData);
 
       if (saleResponse.success) {
-        console.log('Order sale response:', saleResponse);
-        
-        // Update the order status to 'processed'
         const statusUpdateData = {
           status: 'processed',
           note: `Order processed through POS. Sale transaction: ${saleResponse.data.transactionId}`,
           updatedBy: 'admin'
         };
 
-        const orderUpdateResponse = await secureApiCall(`/api/orders/${processingOrder._id}/status`, {
-          method: 'PUT',
-          body: JSON.stringify(statusUpdateData)
+        await updateOrderStatusMutation({
+          orderId: processingOrder._id,
+          statusData: statusUpdateData
         });
 
-        if (orderUpdateResponse.success) {
-          // Refresh inventory data
-          await fetchInventoryItems();
-          
-          // Complete the processing
-          const completedOrder = completeOrderProcessing();
-          
-          // Prepare completed sale data
-          const completedSaleData = {
-            ...saleData,
-            _id: saleResponse.data._id,
-            transactionId: saleResponse.data.transactionId,
-            saleDate: saleResponse.data.saleDate || new Date().toISOString(),
-            status: saleResponse.data.status || 'completed',
-            processedOrder: completedOrder
-          };
-          
-          setCompletedSale(completedSaleData);
-          setPendingSaleForDelivery(completedSaleData);
-          
-          // Clear cart
-          clearCart();
-          
-          // For orders, prompt for delivery scheduling (many orders need delivery)
-          setIsDeliveryPromptOpen(true);
-        } else {
-          throw new Error('Failed to update order status');
-        }
-      } else {
-        throw new Error(saleResponse.message || 'Failed to process sale');
+        const completedOrder = completeOrderProcessing();
+        
+        const completedSaleData = {
+          ...saleData,
+          _id: saleResponse.data._id,
+          transactionId: saleResponse.data.transactionId,
+          saleDate: saleResponse.data.saleDate || new Date().toISOString(),
+          status: saleResponse.data.status || 'completed',
+          processedOrder: completedOrder
+        };
+        
+        setCompletedSale(completedSaleData);
+        setPendingSaleForDelivery(completedSaleData);
+        clearCart();
+        setIsDeliveryPromptOpen(true);
       }
     } catch (error) {
       console.error('Error processing order:', error);
       alert('Error processing order: ' + error.message);
-    } finally {
-      setIsProcessingSale(false);
     }
   };
 
@@ -513,13 +374,131 @@ export default function POSPage() {
     }
   }, [isProcessingOrder, orderCart, orderCustomer]);
 
-  if (loading || hasStore === null) {
+  if (isLoading || hasStore === null) {
     return (
       <DashboardLayout title="Store Mode (POS)" subtitle="Point of Sale System">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading POS system...</p>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Product Selection Skeleton - Left Side */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Search and Filters Skeleton */}
+            <div className="bg-white rounded-2xl p-6 border border-gray-100">
+              <div className="flex items-center space-x-4 mb-4">
+                <div className="flex-1 h-12 bg-gray-200 rounded-xl animate-pulse"></div>
+                <div className="w-12 h-12 bg-gray-200 rounded-xl animate-pulse"></div>
+              </div>
+
+              {/* Category Filter Skeleton */}
+              <div className="flex items-center space-x-2 overflow-x-auto">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="h-10 w-20 bg-gray-200 rounded-lg animate-pulse"></div>
+                ))}
+              </div>
+            </div>
+
+            {/* Product Grid Skeleton */}
+            <div className="bg-white rounded-2xl p-6 border border-gray-100">
+              <div className="h-6 w-32 bg-gray-200 rounded mb-4 animate-pulse"></div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                  <div key={i} className="border border-gray-200 rounded-xl p-4 animate-pulse">
+                    <div className="aspect-square bg-gray-200 rounded-lg mb-3"></div>
+                    <div className="h-4 bg-gray-200 rounded mb-2"></div>
+                    <div className="h-3 bg-gray-200 rounded w-2/3 mb-3"></div>
+                    <div className="flex items-center justify-between">
+                      <div className="h-5 bg-gray-200 rounded w-16"></div>
+                      <div className="h-3 bg-gray-200 rounded w-12"></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Cart and Checkout Skeleton - Right Side */}
+          <div className="space-y-6">
+            {/* Cart Skeleton */}
+            <div className="bg-white rounded-2xl p-6 border border-gray-100">
+              <div className="flex items-center justify-between mb-4">
+                <div className="h-6 w-32 bg-gray-200 rounded animate-pulse"></div>
+                <div className="h-8 w-20 bg-gray-200 rounded animate-pulse"></div>
+              </div>
+
+              <div className="space-y-3 max-h-64">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg animate-pulse">
+                    <div className="flex-1 space-y-2">
+                      <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+                      <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-8 h-8 bg-gray-200 rounded"></div>
+                      <div className="w-8 h-4 bg-gray-200 rounded"></div>
+                      <div className="w-8 h-8 bg-gray-200 rounded"></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="text-center py-8 hidden">
+                <div className="w-12 h-12 bg-gray-200 rounded-full mx-auto mb-4 animate-pulse"></div>
+                <div className="h-4 bg-gray-200 rounded w-24 mx-auto"></div>
+              </div>
+            </div>
+
+            {/* Customer Info Skeleton */}
+            <div className="bg-white rounded-2xl p-6 border border-gray-100">
+              <div className="h-6 w-40 bg-gray-200 rounded mb-4 animate-pulse"></div>
+              <div className="space-y-3">
+                <div className="h-11 bg-gray-200 rounded-lg animate-pulse"></div>
+                <div className="h-11 bg-gray-200 rounded-lg animate-pulse"></div>
+              </div>
+            </div>
+
+            {/* Payment and Totals Skeleton */}
+            <div className="bg-white rounded-2xl p-6 border border-gray-100">
+              <div className="h-6 w-44 bg-gray-200 rounded mb-4 animate-pulse"></div>
+
+              {/* Discount and Tax Skeleton */}
+              <div className="space-y-3 mb-4">
+                <div className="flex items-center space-x-2">
+                  <div className="h-4 w-20 bg-gray-200 rounded"></div>
+                  <div className="flex-1 h-11 bg-gray-200 rounded-lg animate-pulse"></div>
+                  <div className="h-4 w-4 bg-gray-200 rounded"></div>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className="h-4 w-20 bg-gray-200 rounded"></div>
+                  <div className="flex-1 h-11 bg-gray-200 rounded-lg animate-pulse"></div>
+                  <div className="h-4 w-4 bg-gray-200 rounded"></div>
+                </div>
+              </div>
+
+              {/* Payment Method Skeleton */}
+              <div className="mb-4">
+                <div className="h-4 w-32 bg-gray-200 rounded mb-2 animate-pulse"></div>
+                <div className="grid grid-cols-3 gap-2">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="h-20 bg-gray-200 rounded-lg animate-pulse"></div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Totals Skeleton */}
+              <div className="border-t border-gray-200 pt-4 space-y-2">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="flex justify-between">
+                    <div className="h-4 w-20 bg-gray-200 rounded animate-pulse"></div>
+                    <div className="h-4 w-24 bg-gray-200 rounded animate-pulse"></div>
+                  </div>
+                ))}
+                <div className="flex justify-between border-t border-gray-200 pt-2">
+                  <div className="h-6 w-16 bg-gray-200 rounded animate-pulse"></div>
+                  <div className="h-6 w-28 bg-gray-200 rounded animate-pulse"></div>
+                </div>
+              </div>
+
+              {/* Process Sale Button Skeleton */}
+              <div className="w-full mt-4 h-12 bg-gray-200 rounded-xl animate-pulse"></div>
+            </div>
           </div>
         </div>
       </DashboardLayout>
@@ -933,10 +912,10 @@ export default function POSPage() {
             {/* Process Sale Button */}
             <button
               onClick={processSale}
-              disabled={cart.length === 0 || isProcessingSale || (paymentMethod === 'cash' && parseFloat(amountReceived || 0) < total)}
+              disabled={cart.length === 0 || isSaleProcessing || (paymentMethod === 'cash' && parseFloat(amountReceived || 0) < total)}
               className="w-full mt-4 bg-teal-600 text-white py-3 rounded-xl font-medium hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
             >
-              {isProcessingSale ? (
+              {isSaleProcessing ? (
                 <>
                   <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -1016,7 +995,6 @@ export default function POSPage() {
         onClose={() => {
           setIsDeliveryModalOpen(false);
           setPendingSaleForDelivery(null);
-          // Still show receipt modal if user cancels delivery scheduling
           setIsReceiptModalOpen(true);
         }}
         onSubmit={handleScheduleDelivery}

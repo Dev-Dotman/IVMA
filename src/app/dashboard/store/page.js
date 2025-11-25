@@ -561,7 +561,7 @@ export default function StorePage() {
               </h2>
               
               <div className="space-y-6">
-                <div>
+                {/* <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Website URL</label>
                   {isEditing ? (
                     <input
@@ -577,7 +577,7 @@ export default function StorePage() {
                       <span className="text-gray-900">{store.onlineStoreInfo?.website || 'Not provided'}</span>
                     </div>
                   )}
-                </div>
+                </div> */}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>

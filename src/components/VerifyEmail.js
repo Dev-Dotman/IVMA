@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { ArrowLeft, Mail } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import Image from "next/image";
 
 export default function VerifyEmail({ email, onBack, onVerified }) {
   const [verificationCode, setVerificationCode] = useState(["", "", "", "", "", ""]);
@@ -122,12 +123,34 @@ export default function VerifyEmail({ email, onBack, onVerified }) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen bg-gray-100 flex flex-col relative overflow-hidden">
+      {/* Background Image with Blur Overlay */}
+      <div
+        className="absolute inset-0 z-0"
+        style={{
+          backgroundImage: 'url(/ivma1.png)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+        }}
+      >
+        {/* Blur and Tint Overlay */}
+        <div className="absolute inset-0 backdrop-blur-3xl bg-black/90"></div>
+
+        {/* Gradient Accents */}
+        <div className="absolute inset-0 bg-gradient-to-br from-teal-500/20 via-transparent to-green-500/20"></div>
+
+        {/* Additional Blur Spots for Depth */}
+        <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full opacity-30 blur-3xl bg-teal-600"></div>
+        <div className="absolute -bottom-32 -left-32 w-80 h-80 rounded-full opacity-30 blur-3xl bg-green-600"></div>
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full opacity-20 blur-3xl bg-teal-400"></div>
+      </div>
+
       {/* Header */}
-      <div className="p-6">
+      <div className="p-6 relative z-10">
         <button
           onClick={onBack}
-          className="flex items-center text-gray-600 hover:text-gray-800 transition-colors"
+          className="flex items-center text-white/80 hover:text-white transition-colors"
         >
           <ArrowLeft className="w-5 h-5 mr-2" />
           <span className="text-sm font-medium">Back</span>
@@ -135,21 +158,21 @@ export default function VerifyEmail({ email, onBack, onVerified }) {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex items-center justify-center px-6">
+      <div className="flex-1 flex items-center justify-center px-6 relative z-10">
         <div className="w-full max-w-md">
           {/* Email Icon */}
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-800 rounded-2xl mb-6">
-              <Mail className="w-8 h-8 text-white" />
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-teal-600/80 backdrop-blur-sm rounded-3xl mb-6 shadow-2xl">
+              <Mail className="w-10 h-10 text-white" />
             </div>
             
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">
+            <h1 className="text-3xl font-bold text-white mb-3">
               Check your inbox!
             </h1>
             
-            <p className="text-gray-600 text-sm leading-relaxed">
-              We've sent a 6-digit verification code to your email<br />
-              Please enter it below to continue.
+            <p className="text-white/80 text-sm leading-relaxed">
+              We've sent a 6-digit verification code to<br />
+              <span className="font-semibold text-white">{email}</span>
             </p>
           </div>
 
@@ -168,7 +191,7 @@ export default function VerifyEmail({ email, onBack, onVerified }) {
                   onChange={(e) => handleInputChange(index, e.target.value)}
                   onKeyDown={(e) => handleKeyDown(index, e)}
                   onPaste={index === 0 ? handlePaste : undefined}
-                  className="w-12 h-12 text-center text-lg font-semibold border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent outline-none transition-all"
+                  className="w-12 h-12 text-center text-lg font-semibold bg-white/10 backdrop-blur-sm border border-white/20 text-white rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none transition-all placeholder-white/50"
                   autoComplete="off"
                 />
               ))}
@@ -177,7 +200,7 @@ export default function VerifyEmail({ email, onBack, onVerified }) {
             {/* Error Message */}
             {error && (
               <div className="text-center">
-                <p className={`text-sm ${error.includes("sent") ? "text-green-600" : "text-red-600"}`}>
+                <p className={`text-sm ${error.includes("sent") ? "text-green-400" : "text-red-400"}`}>
                   {error}
                 </p>
               </div>
@@ -187,7 +210,7 @@ export default function VerifyEmail({ email, onBack, onVerified }) {
             <button
               type="submit"
               disabled={isSubmitting || verificationCode.join("").length !== 6}
-              className="w-full bg-black text-white py-3 px-4 rounded-lg font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="w-full bg-gradient-to-br from-green-950 via-gray-900 to-green-950 backdrop-blur-3xl text-white py-3 px-4 rounded-lg hover:opacity-90 font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? "Verifying..." : "Verify Email"}
             </button>
@@ -195,15 +218,15 @@ export default function VerifyEmail({ email, onBack, onVerified }) {
 
           {/* Resend Code */}
           <div className="text-center mt-6 space-y-4">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-white/80">
               Didn't receive it?{" "}
               <button
                 onClick={handleResendCode}
                 disabled={!canResend}
                 className={`font-medium underline ${
                   canResend
-                    ? "text-black hover:text-gray-700"
-                    : "text-gray-400 cursor-not-allowed"
+                    ? "text-teal-400 hover:text-teal-300"
+                    : "text-white/40 cursor-not-allowed"
                 }`}
               >
                 {canResend ? "Resend Code" : `Resend Code (${resendCooldown}s)`}
@@ -212,7 +235,7 @@ export default function VerifyEmail({ email, onBack, onVerified }) {
 
             <button
               onClick={onBack}
-              className="text-sm text-gray-600 hover:text-gray-800 underline font-medium"
+              className="text-sm text-white/80 hover:text-white underline font-medium"
             >
               Change email address
             </button>
@@ -221,11 +244,11 @@ export default function VerifyEmail({ email, onBack, onVerified }) {
       </div>
 
       {/* Footer */}
-      <div className="p-6">
-        <div className="flex justify-center space-x-6 text-sm text-gray-500">
-          <a href="#" className="hover:text-gray-700">Developers</a>
-          <a href="#" className="hover:text-gray-700">Privacy Policy</a>
-          <a href="#" className="hover:text-gray-700">Support</a>
+      <div className="p-6 relative z-10">
+        <div className="flex justify-center space-x-6 text-sm text-white/60">
+          <a href="#" className="hover:text-white/80">Help Center</a>
+          <a href="#" className="hover:text-white/80">Privacy Policy</a>
+          <a href="#" className="hover:text-white/80">Support</a>
         </div>
       </div>
     </div>

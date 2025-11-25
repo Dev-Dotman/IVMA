@@ -6,7 +6,7 @@ import AddInventoryModal from "@/components/dashboard/AddInventoryModal";
 import EditInventoryModal from "@/components/dashboard/EditInventoryModal";
 import StockUpdateModal from "@/components/dashboard/StockUpdateModal";
 import CustomDropdown from "@/components/ui/CustomDropdown";
-import { useAuth } from "@/contexts/AuthContext";
+import { useInventoryData } from "@/hooks/useInventoryData";
 import { 
   Package, 
   AlertTriangle, 
@@ -24,10 +24,6 @@ import {
 
 export default function InventoryPage() {
   const router = useRouter();
-  const { secureApiCall } = useAuth();
-  const [inventoryData, setInventoryData] = useState([]);
-  const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterBy, setFilterBy] = useState('all');
   const [filterValue, setFilterValue] = useState('');
@@ -37,39 +33,30 @@ export default function InventoryPage() {
   const [selectedItem, setSelectedItem] = useState(null);
   const [selectedStockItem, setSelectedStockItem] = useState(null);
 
-  // Fetch inventory data
-  const fetchInventoryData = async () => {
-    try {
-      const response = await secureApiCall('/api/inventory');
-      if (response.success) {
-        // The enhanced inventory API now returns current batch pricing
-        setInventoryData(response.data);
-      }
-    } catch (error) {
-      console.error('Error fetching inventory:', error);
-    }
-  };
+  // Use TanStack Query for data fetching
+  const {
+    inventoryData,
+    stats,
+    isLoading,
+    addItem,
+    editItem,
+    updateStock,
+    isAddingItem,
+    isEditingItem,
+    isUpdatingStock,
+    statsError,
+    isLoadingStats,
+  } = useInventoryData();
 
-  // Fetch inventory statistics
-  const fetchStats = async () => {
-    try {
-      const response = await secureApiCall('/api/inventory/stats');
-      if (response.success) {
-        setStats(response.data.overview);
-      }
-    } catch (error) {
-      console.error('Error fetching stats:', error);
-    }
-  };
-
+  // Debug log when stats change
   useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      await Promise.all([fetchInventoryData(), fetchStats()]);
-      setLoading(false);
-    };
-    loadData();
-  }, []);
+    if (stats) {
+      console.log('Inventory stats updated:', stats);
+    }
+    if (statsError) {
+      console.error('Inventory stats error:', statsError);
+    }
+  }, [stats, statsError]);
 
   const getStatusColor = (item) => {
     if (item.quantityInStock === 0) return 'bg-red-100 text-red-800';
@@ -88,14 +75,15 @@ export default function InventoryPage() {
       style: 'currency',
       currency: 'NGN',
       minimumFractionDigits: 0
-    }).format(amount);
+    }).format(amount || 0);
   };
 
+  // Safe stats cards with proper null checks and validation
   const statsCards = stats ? [
     {
       title: 'Total Items',
       description: 'Total unique products',
-      value: stats.totalItems.toString(),
+      value: String(Number(stats.totalItems) || 0),
       icon: Package,
       iconBg: 'bg-teal-100',
       iconColor: 'text-teal-600'
@@ -103,7 +91,7 @@ export default function InventoryPage() {
     {
       title: 'Low Stock Items',
       description: 'Items below reorder level',
-      value: stats.lowStockItems.toString(),
+      value: String(Number(stats.lowStockItems) || 0),
       icon: AlertTriangle,
       iconBg: 'bg-yellow-100',
       iconColor: 'text-yellow-600'
@@ -111,7 +99,7 @@ export default function InventoryPage() {
     {
       title: 'Out of Stock',
       description: 'Items with zero quantity',
-      value: stats.outOfStockItems.toString(),
+      value: String(Number(stats.outOfStockItems) || 0),
       icon: XCircle,
       iconBg: 'bg-red-100',
       iconColor: 'text-red-600'
@@ -119,7 +107,7 @@ export default function InventoryPage() {
     {
       title: 'Total Stock Value',
       description: 'Total inventory worth (cost)',
-      value: formatCurrency(stats.totalStockValue),
+      value: formatCurrency(Number(stats.totalStockValue) || 0),
       icon: ShoppingBag,
       iconBg: 'bg-green-100',
       iconColor: 'text-green-600'
@@ -127,7 +115,7 @@ export default function InventoryPage() {
     {
       title: 'Expected Revenue',
       description: 'Total selling value if all sold',
-      value: formatCurrency(stats.totalSellingValue || 0),
+      value: formatCurrency(Number(stats.totalSellingValue) || 0),
       icon: TrendingUp,
       iconBg: 'bg-purple-100',
       iconColor: 'text-purple-600'
@@ -137,18 +125,8 @@ export default function InventoryPage() {
   // Handle adding new inventory item
   const handleAddItem = async (itemData) => {
     try {
-      const response = await secureApiCall('/api/inventory', {
-        method: 'POST',
-        body: JSON.stringify(itemData)
-      });
-
-      if (response.success) {
-        // Refresh data
-        await Promise.all([fetchInventoryData(), fetchStats()]);
-        return response;
-      } else {
-        throw new Error(response.message || 'Failed to add item');
-      }
+      const response = await addItem(itemData);
+      return response;
     } catch (error) {
       console.error('Error adding item:', error);
       throw error;
@@ -158,18 +136,8 @@ export default function InventoryPage() {
   // Handle editing inventory item
   const handleEditItem = async (itemId, itemData) => {
     try {
-      const response = await secureApiCall(`/api/inventory/${itemId}`, {
-        method: 'PUT',
-        body: JSON.stringify(itemData)
-      });
-
-      if (response.success) {
-        // Refresh data
-        await Promise.all([fetchInventoryData(), fetchStats()]);
-        return response;
-      } else {
-        throw new Error(response.message || 'Failed to update item');
-      }
+      const response = await editItem({ itemId, itemData });
+      return response;
     } catch (error) {
       console.error('Error updating item:', error);
       throw error;
@@ -179,18 +147,8 @@ export default function InventoryPage() {
   // Handle stock update
   const handleStockUpdate = async (itemId, updateData) => {
     try {
-      const response = await secureApiCall(`/api/inventory/${itemId}/stock`, {
-        method: 'PUT',
-        body: JSON.stringify(updateData)
-      });
-
-      if (response.success) {
-        // Refresh data
-        await Promise.all([fetchInventoryData(), fetchStats()]);
-        return response;
-      } else {
-        throw new Error(response.message || 'Failed to update stock');
-      }
+      const response = await updateStock({ itemId, updateData });
+      return response;
     } catch (error) {
       console.error('Error updating stock:', error);
       throw error;
@@ -300,7 +258,7 @@ export default function InventoryPage() {
   // Handle filter type change
   const handleFilterByChange = (value) => {
     setFilterBy(value);
-    setFilterValue(''); // Reset filter value when filter type changes
+    setFilterValue('');
   };
 
   // Handle filter value change
@@ -315,13 +273,146 @@ export default function InventoryPage() {
     setSearchTerm('');
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <DashboardLayout title="Inventory Management" subtitle="Today, August 16th 2024">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading inventory...</p>
+        {/* Stats Cards Skeleton - Responsive */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 md:gap-6 mb-6 md:mb-8">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="bg-white rounded-2xl p-4 md:p-6 border border-gray-100 animate-pulse">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center mb-2 md:mb-3">
+                    <div className="w-8 h-8 md:w-9 md:h-9 bg-gray-200 rounded-xl mr-2 md:mr-3"></div>
+                    <div className="h-3 md:h-4 w-20 md:w-24 bg-gray-200 rounded"></div>
+                  </div>
+                  <div className="h-2.5 md:h-3 w-24 md:w-32 bg-gray-200 rounded mb-2 md:mb-3"></div>
+                  <div className="h-6 md:h-8 w-12 md:w-16 bg-gray-200 rounded"></div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Table Skeleton - Responsive */}
+        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+          {/* Header Skeleton */}
+          <div className="p-4 md:p-6 border-b border-gray-100">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div className="h-5 md:h-6 w-32 md:w-48 bg-gray-200 rounded animate-pulse"></div>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 md:gap-3">
+                <div className="h-10 w-full sm:w-60 md:w-80 bg-gray-200 rounded-xl animate-pulse"></div>
+                <div className="h-10 w-full sm:w-36 md:w-48 bg-gray-200 rounded-xl animate-pulse"></div>
+                <div className="h-10 w-full sm:w-28 md:w-32 bg-gray-200 rounded-xl animate-pulse"></div>
+              </div>
+            </div>
+          </div>
+
+          {/* Table Content Skeleton - Desktop Only */}
+          <div className="hidden lg:block overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50/50">
+                <tr>
+                  {['Product', 'SKU', 'Category', 'Quantity', 'Cost Price', 'Selling Price', 'Stock Value', 'Status', 'Action'].map((header, idx) => (
+                    <th key={idx} className="px-6 py-4 text-left">
+                      <div className="h-3 w-20 bg-gray-200 rounded animate-pulse"></div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-100">
+                {[1, 2, 3, 4, 5, 6, 7, 8].map((row) => (
+                  <tr key={row} className="animate-pulse">
+                    {/* Product */}
+                    <td className="px-6 py-4">
+                      <div className="space-y-2">
+                        <div className="h-4 w-32 bg-gray-200 rounded"></div>
+                        <div className="h-3 w-24 bg-gray-200 rounded"></div>
+                      </div>
+                    </td>
+                    {/* SKU */}
+                    <td className="px-6 py-4">
+                      <div className="h-4 w-20 bg-gray-200 rounded"></div>
+                    </td>
+                    {/* Category */}
+                    <td className="px-6 py-4">
+                      <div className="h-4 w-24 bg-gray-200 rounded"></div>
+                    </td>
+                    {/* Quantity */}
+                    <td className="px-6 py-4">
+                      <div className="h-4 w-16 bg-gray-200 rounded"></div>
+                    </td>
+                    {/* Cost Price */}
+                    <td className="px-6 py-4">
+                      <div className="h-4 w-20 bg-gray-200 rounded"></div>
+                    </td>
+                    {/* Selling Price */}
+                    <td className="px-6 py-4">
+                      <div className="h-4 w-20 bg-gray-200 rounded"></div>
+                    </td>
+                    {/* Stock Value */}
+                    <td className="px-6 py-4">
+                      <div className="h-4 w-24 bg-gray-200 rounded"></div>
+                    </td>
+                    {/* Status */}
+                    <td className="px-6 py-4">
+                      <div className="h-6 w-20 bg-gray-200 rounded-full"></div>
+                    </td>
+                    {/* Action */}
+                    <td className="px-6 py-4">
+                      <div className="flex items-center space-x-1">
+                        <div className="w-8 h-8 bg-gray-200 rounded-lg"></div>
+                        <div className="w-8 h-8 bg-gray-200 rounded-lg"></div>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile/Tablet Card View Skeleton */}
+          <div className="lg:hidden divide-y divide-gray-100">
+            {[1, 2, 3, 4, 5, 6].map((card) => (
+              <div key={card} className="p-4 animate-pulse">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex-1">
+                    <div className="h-4 w-32 bg-gray-200 rounded mb-2"></div>
+                    <div className="h-3 w-24 bg-gray-200 rounded"></div>
+                  </div>
+                  <div className="h-6 w-20 bg-gray-200 rounded-full"></div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <div>
+                    <div className="h-3 w-16 bg-gray-200 rounded mb-1"></div>
+                    <div className="h-4 w-20 bg-gray-200 rounded"></div>
+                  </div>
+                  <div>
+                    <div className="h-3 w-16 bg-gray-200 rounded mb-1"></div>
+                    <div className="h-4 w-20 bg-gray-200 rounded"></div>
+                  </div>
+                  <div>
+                    <div className="h-3 w-16 bg-gray-200 rounded mb-1"></div>
+                    <div className="h-4 w-24 bg-gray-200 rounded"></div>
+                  </div>
+                  <div>
+                    <div className="h-3 w-16 bg-gray-200 rounded mb-1"></div>
+                    <div className="h-4 w-20 bg-gray-200 rounded"></div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end space-x-2 mt-3 pt-3 border-t border-gray-100">
+                  <div className="w-8 h-8 bg-gray-200 rounded-lg"></div>
+                  <div className="w-8 h-8 bg-gray-200 rounded-lg"></div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Footer Skeleton */}
+          <div className="px-4 md:px-6 py-3 md:py-4 border-t border-gray-100 bg-gray-50">
+            <div className="h-3 md:h-4 w-48 md:w-64 bg-gray-200 rounded animate-pulse"></div>
           </div>
         </div>
       </DashboardLayout>
@@ -345,7 +436,13 @@ export default function InventoryPage() {
                     <h3 className="text-sm font-medium text-gray-900">{stat.title}</h3>
                   </div>
                   <p className="text-xs text-gray-500 mb-3">{stat.description}</p>
-                  <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {isLoadingStats ? (
+                      <span className="inline-block w-16 h-8 bg-gray-200 animate-pulse rounded"></span>
+                    ) : (
+                      stat.value
+                    )}
+                  </p>
                 </div>
               </div>
             </div>
@@ -564,13 +661,13 @@ export default function InventoryPage() {
                     </td>
                     <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center space-x-1">
-                        <button 
+                        {/* <button 
                           onClick={() => openEditModal(item)}
                           className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all"
                           title="Edit item"
                         >
                           <Edit className="w-4 h-4" />
-                        </button>
+                        </button> */}
                         <button 
                           onClick={() => openStockModal(item)}
                           className="p-1.5 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-all"
