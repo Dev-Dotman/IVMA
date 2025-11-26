@@ -51,6 +51,23 @@ const OrderItemSchema = new mongoose.Schema({
       city: String,
       state: String,
       country: String
+    },
+    // Add social media information
+    onlineStoreInfo: {
+      website: String,
+      socialMedia: {
+        instagram: String,
+        facebook: String,
+        twitter: String,
+        tiktok: String,
+        whatsapp: String
+      }
+    },
+    // Store branding for UI consistency
+    branding: {
+      logo: String,
+      primaryColor: String,
+      secondaryColor: String
     }
   },
   seller: {
@@ -61,7 +78,7 @@ const OrderItemSchema = new mongoose.Schema({
   // Item-level status for multi-vendor orders
   itemStatus: {
     type: String,
-    enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded', 'processed'],
+    enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded'],
     default: 'pending'
   },
   // Item-level tracking
@@ -83,15 +100,6 @@ const OrderItemSchema = new mongoose.Schema({
   }
 }, { _id: true });
 
-const customerSnapshotSchema = new mongoose.Schema({
-  firstName: { type: String, required: true },
-  lastName: { type: String, required: true },
-  email: { type: String, required: true },
-  phone: { type: String, default: '' },
-  // Store additional customer data as needed
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }
-}, { _id: false });
-
 const OrderSchema = new mongoose.Schema({
   orderNumber: {
     type: String,
@@ -106,7 +114,12 @@ const OrderSchema = new mongoose.Schema({
     index: true
   },
   // Customer snapshot at time of order
-  customerSnapshot: customerSnapshotSchema,
+  customerSnapshot: {
+    firstName: String,
+    lastName: String,
+    email: String,
+    phone: String
+  },
   items: [OrderItemSchema],
   
   // Order financials
@@ -144,21 +157,59 @@ const OrderSchema = new mongoose.Schema({
   // Order status
   status: {
     type: String,
-    enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded', 'processed'],
+    enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded','processed'],
     default: 'pending',
     index: true
   },
   
-  // Shipping information
+  // Shipping information - Updated with detailed address
   shippingAddress: {
-    firstName: { type: String, required: true },
-    lastName: { type: String, required: true },
-    phone: { type: String, required: true },
-    street: { type: String }, // Optional, will contain "City, State" if not provided
-    city: { type: String, required: true },
-    state: { type: String, required: true },
-    country: { type: String, required: true, default: 'Nigeria' },
-    postalCode: String
+    firstName: { 
+      type: String, 
+      required: true,
+      trim: true
+    },
+    lastName: { 
+      type: String, 
+      required: true,
+      trim: true
+    },
+    phone: { 
+      type: String, 
+      required: true,
+      trim: true
+    },
+    street: { 
+      type: String, 
+      required: true,  // Now required for detailed address
+      trim: true,
+      maxlength: [200, 'Street address cannot exceed 200 characters']
+    },
+    city: { 
+      type: String, 
+      required: true,
+      trim: true
+    },
+    state: { 
+      type: String, 
+      required: true,
+      trim: true
+    },
+    country: { 
+      type: String, 
+      required: true, 
+      default: 'Nigeria',
+      trim: true
+    },
+    postalCode: {
+      type: String,
+      trim: true
+    },
+    landmark: {
+      type: String,
+      trim: true,
+      maxlength: [200, 'Landmark cannot exceed 200 characters']
+    }
   },
   
   // Billing address (if different from shipping)
@@ -248,8 +299,36 @@ const OrderSchema = new mongoose.Schema({
     subtotal: Number,
     status: {
       type: String,
-      enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'],
+      enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'processed'],
       default: 'pending'
+    },
+    // Add store snapshot with social media
+    storeSnapshot: {
+      storeName: String,
+      storeSlug: String,
+      storePhone: String,
+      storeEmail: String,
+      storeAddress: {
+        street: String,
+        city: String,
+        state: String,
+        country: String
+      },
+      onlineStoreInfo: {
+        website: String,
+        socialMedia: {
+          instagram: String,
+          facebook: String,
+          twitter: String,
+          tiktok: String,
+          whatsapp: String
+        }
+      },
+      branding: {
+        logo: String,
+        primaryColor: String,
+        secondaryColor: String
+      }
     }
   }],
   
@@ -309,21 +388,41 @@ OrderSchema.virtual('canBeRefunded').get(function() {
   return this.isPaid && ['delivered', 'cancelled'].includes(this.status);
 });
 
+// Add virtual for full address
+OrderSchema.virtual('fullAddress').get(function() {
+  const parts = [
+    this.shippingAddress.street,
+    this.shippingAddress.landmark,
+    this.shippingAddress.city,
+    this.shippingAddress.state,
+    this.shippingAddress.country
+  ].filter(Boolean);
+  
+  return parts.join(', ');
+});
+
 // Generate order number before saving
 OrderSchema.pre('save', async function(next) {
   try {
-    // Generate order number if not exists
     if (!this.orderNumber) {
+      // Use countDocuments to get total orders
       const count = await this.constructor.countDocuments();
-      this.orderNumber = `ORD-${String(count + 1).padStart(6, '0')}`;
-    }
-
-    // Ensure customer snapshot has required fields
-    if (this.customerSnapshot) {
-      if (!this.customerSnapshot.firstName) this.customerSnapshot.firstName = 'Guest';
-      if (!this.customerSnapshot.lastName) this.customerSnapshot.lastName = 'Customer';
-      if (!this.customerSnapshot.email) this.customerSnapshot.email = 'guest@example.com';
-      if (!this.customerSnapshot.phone) this.customerSnapshot.phone = '';
+      const timestamp = Date.now().toString().slice(-6);
+      this.orderNumber = `ORD-${timestamp}-${String(count + 1).padStart(4, '0')}`;
+      
+      // Ensure uniqueness - if order number exists, increment
+      let attempts = 0;
+      while (attempts < 10) {
+        const existingOrder = await this.constructor.findOne({ 
+          orderNumber: this.orderNumber,
+          _id: { $ne: this._id }
+        });
+        
+        if (!existingOrder) break;
+        
+        attempts++;
+        this.orderNumber = `ORD-${timestamp}-${String(count + 1 + attempts).padStart(4, '0')}`;
+      }
     }
     
     // Calculate subtotal from items
@@ -332,9 +431,9 @@ OrderSchema.pre('save', async function(next) {
     // Calculate total
     this.totalAmount = this.subtotal + this.tax + this.shippingFee - this.discount - this.couponDiscount;
     
-    // Group items by store
+    // Group items by store with enhanced store snapshot
     const storeGroups = {};
-    this.items.forEach(item => {
+    for (const item of this.items) {
       const storeId = item.store.toString();
       if (!storeGroups[storeId]) {
         storeGroups[storeId] = {
@@ -342,12 +441,21 @@ OrderSchema.pre('save', async function(next) {
           storeName: item.storeSnapshot.storeName,
           itemCount: 0,
           subtotal: 0,
-          status: item.itemStatus
+          status: item.itemStatus,
+          storeSnapshot: {
+            storeName: item.storeSnapshot.storeName,
+            storeSlug: item.storeSnapshot.storeSlug,
+            storePhone: item.storeSnapshot.storePhone,
+            storeEmail: item.storeSnapshot.storeEmail,
+            storeAddress: item.storeSnapshot.storeAddress,
+            onlineStoreInfo: item.storeSnapshot.onlineStoreInfo,
+            branding: item.storeSnapshot.branding
+          }
         };
       }
       storeGroups[storeId].itemCount += item.quantity;
       storeGroups[storeId].subtotal += item.subtotal;
-    });
+    }
     
     this.stores = Object.values(storeGroups);
     

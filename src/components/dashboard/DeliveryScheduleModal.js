@@ -53,15 +53,47 @@ export default function DeliveryScheduleModal({ isOpen, onClose, onSubmit, sale 
     { value: 'partial', label: 'Partially Paid' }
   ];
 
-  // Pre-populate customer data from sale
+  // Pre-populate customer and address data from sale/order
   useEffect(() => {
     if (isOpen && sale) {
-      setFormData(prev => ({
-        ...prev,
-        customerName: sale.customer?.name || '',
-        customerPhone: sale.customer?.phone || '',
-        customerEmail: sale.customer?.email || ''
-      }));
+      // Get shipping address from processed order if available, otherwise from sale
+      const shippingAddress = sale.processedOrder?.shippingAddress || sale.shippingAddress || {};
+      
+      // Build full address string from components
+      const addressParts = [
+        shippingAddress.street,
+        shippingAddress.landmark,
+        shippingAddress.city,
+        shippingAddress.state,
+        shippingAddress.postalCode,
+        shippingAddress.country
+      ].filter(Boolean);
+      
+      const fullAddress = addressParts.length > 0 ? addressParts.join(', ') : '';
+
+      setFormData({
+        customerName: sale.customer?.name || 
+                      (sale.processedOrder ? `${sale.processedOrder.customerSnapshot?.firstName || ''} ${sale.processedOrder.customerSnapshot?.lastName || ''}`.trim() : ''),
+        customerPhone: sale.customer?.phone || 
+                       shippingAddress.phone || 
+                       sale.processedOrder?.customerSnapshot?.phone || '',
+        customerEmail: sale.customer?.email || 
+                       sale.processedOrder?.customerSnapshot?.email || '',
+        address: {
+          street: shippingAddress.street || '',
+          city: shippingAddress.city || '',
+          state: shippingAddress.state || '',
+          postalCode: shippingAddress.postalCode || '',
+          fullAddress: fullAddress
+        },
+        scheduledDate: '',
+        timeSlot: 'anytime',
+        deliveryMethod: 'self_delivery',
+        deliveryFee: 0,
+        priority: 'medium',
+        paymentStatus: sale.paymentMethod === 'cash' ? 'cash_on_delivery' : 'paid',
+        notes: sale.processedOrder?.customerNotes || ''
+      });
       setErrors({});
     }
   }, [isOpen, sale]);

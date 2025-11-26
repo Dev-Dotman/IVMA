@@ -488,28 +488,41 @@ export default function OrderDetailsModal({
               <div className="space-y-8">
                 {/* Customer Details */}
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Customer Information</h3>
-                  <div className="bg-gray-50 rounded-xl p-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                    <User className="w-5 h-5 mr-2 text-teal-600" />
+                    Customer Information
+                  </h3>
+                  <div className="bg-gradient-to-br from-gray-50 to-white rounded-xl p-6 border border-gray-200">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div>
-                        <p className="text-sm text-gray-600 mb-1">Name</p>
-                        <p className="text-sm font-medium text-gray-900">
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Full Name</p>
+                        <p className="text-base font-semibold text-gray-900">
                           {order.customerSnapshot.firstName} {order.customerSnapshot.lastName}
                         </p>
                       </div>
                       <div>
-                        <p className="text-sm text-gray-600 mb-1">Email</p>
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Email Address</p>
                         <div className="flex items-center space-x-2">
                           <Mail className="w-4 h-4 text-gray-400" />
-                          <p className="text-sm text-gray-900">{order.customerSnapshot.email}</p>
+                          <a 
+                            href={`mailto:${order.customerSnapshot.email}`}
+                            className="text-base text-teal-600 hover:text-teal-700 hover:underline"
+                          >
+                            {order.customerSnapshot.email}
+                          </a>
                         </div>
                       </div>
                       {order.customerSnapshot.phone && (
                         <div>
-                          <p className="text-sm text-gray-600 mb-1">Phone</p>
+                          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Phone Number</p>
                           <div className="flex items-center space-x-2">
                             <Phone className="w-4 h-4 text-gray-400" />
-                            <p className="text-sm text-gray-900">{order.customerSnapshot.phone}</p>
+                            <a 
+                              href={`tel:${order.customerSnapshot.phone}`}
+                              className="text-base text-teal-600 hover:text-teal-700 hover:underline"
+                            >
+                              {order.customerSnapshot.phone}
+                            </a>
                           </div>
                         </div>
                       )}
@@ -519,26 +532,134 @@ export default function OrderDetailsModal({
 
                 {/* Shipping Address */}
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Shipping Address</h3>
-                  <div className="bg-gray-50 rounded-xl p-4">
-                    <div className="flex items-start space-x-3">
-                      <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">
-                          {order.shippingAddress.firstName} {order.shippingAddress.lastName}
-                        </p>
-                        <p className="text-sm text-gray-600">{order.shippingAddress.phone}</p>
-                        <div className="mt-2 text-sm text-gray-600">
-                          {order.shippingAddress.street && (
-                            <p>{order.shippingAddress.street}</p>
-                          )}
-                          <p>
-                            {order.shippingAddress.city}, {order.shippingAddress.state}
-                          </p>
-                          <p>
-                            {order.shippingAddress.country} {order.shippingAddress.postalCode}
-                          </p>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                    <Truck className="w-5 h-5 mr-2 text-teal-600" />
+                    Delivery Address
+                  </h3>
+                  <div className="bg-gradient-to-br from-teal-50 to-white rounded-xl p-6 border border-teal-200">
+                    <div className="flex items-start space-x-4">
+                      <div className="flex-shrink-0">
+                        <div className="w-12 h-12 bg-teal-100 rounded-xl flex items-center justify-center">
+                          <MapPin className="w-6 h-6 text-teal-600" />
                         </div>
+                      </div>
+                      <div className="flex-1">
+                        {/* Contact Info */}
+                        <div className="mb-4 pb-4 border-b border-teal-100">
+                          <p className="text-base font-semibold text-gray-900">
+                            {order.shippingAddress.firstName} {order.shippingAddress.lastName}
+                          </p>
+                          <div className="flex items-center space-x-4 mt-2">
+                            <div className="flex items-center space-x-1.5 text-sm text-gray-600">
+                              <Phone className="w-3.5 h-3.5" />
+                              <span>{order.shippingAddress.phone}</span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Address Details */}
+                        <div className="space-y-2">
+                          {order.shippingAddress.street && (
+                            <div className="flex items-start space-x-2">
+                              <div className="w-5 h-5 flex-shrink-0 flex items-center justify-center">
+                                <div className="w-1.5 h-1.5 bg-teal-600 rounded-full"></div>
+                              </div>
+                              <div>
+                                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Street Address</p>
+                                <p className="text-sm text-gray-900 mt-0.5">{order.shippingAddress.street}</p>
+                              </div>
+                            </div>
+                          )}
+                          
+                          {order.shippingAddress.landmark && (
+                            <div className="flex items-start space-x-2">
+                              <div className="w-5 h-5 flex-shrink-0 flex items-center justify-center">
+                                <div className="w-1.5 h-1.5 bg-teal-600 rounded-full"></div>
+                              </div>
+                              <div>
+                                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Landmark</p>
+                                <p className="text-sm text-gray-900 mt-0.5">{order.shippingAddress.landmark}</p>
+                              </div>
+                            </div>
+                          )}
+                          
+                          <div className="flex items-start space-x-2">
+                            <div className="w-5 h-5 flex-shrink-0 flex items-center justify-center">
+                              <div className="w-1.5 h-1.5 bg-teal-600 rounded-full"></div>
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">City & State</p>
+                              <p className="text-sm text-gray-900 mt-0.5">
+                                {order.shippingAddress.city}, {order.shippingAddress.state}
+                              </p>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-start space-x-2">
+                            <div className="w-5 h-5 flex-shrink-0 flex items-center justify-center">
+                              <div className="w-1.5 h-1.5 bg-teal-600 rounded-full"></div>
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Country</p>
+                              <p className="text-sm text-gray-900 mt-0.5">
+                                {order.shippingAddress.country}
+                                {order.shippingAddress.postalCode && ` - ${order.shippingAddress.postalCode}`}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Full Address Display */}
+                        <div className="mt-4 pt-4 border-t border-teal-100">
+                          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Complete Address</p>
+                          <div className="bg-white rounded-lg p-3 border border-teal-100">
+                            <p className="text-sm text-gray-700 leading-relaxed">
+                              {[
+                                order.shippingAddress.street,
+                                order.shippingAddress.landmark,
+                                order.shippingAddress.city,
+                                order.shippingAddress.state,
+                                order.shippingAddress.postalCode,
+                                order.shippingAddress.country
+                              ].filter(Boolean).join(', ')}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Copy Address Button */}
+                        <button
+                          onClick={async () => {
+                            const fullAddress = [
+                              order.shippingAddress.street,
+                              order.shippingAddress.landmark,
+                              order.shippingAddress.city,
+                              order.shippingAddress.state,
+                              order.shippingAddress.postalCode,
+                              order.shippingAddress.country
+                            ].filter(Boolean).join(', ');
+                            
+                            try {
+                              await navigator.clipboard.writeText(fullAddress);
+                              setCopied(true);
+                              setTimeout(() => setCopied(false), 2000);
+                            } catch (error) {
+                              console.error('Failed to copy address:', error);
+                            }
+                          }}
+                          className="mt-4 flex items-center space-x-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-sm font-medium"
+                        >
+                          {copied ? (
+                            <>
+                              <CheckCircle className="w-4 h-4" />
+                              <span>Address Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-4 h-4" />
+                              <span>Copy Address</span>
+                            </>
+                          )}
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -547,25 +668,90 @@ export default function OrderDetailsModal({
                 {/* Billing Address */}
                 {order.billingAddress && (
                   <div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Billing Address</h3>
-                    <div className="bg-gray-50 rounded-xl p-4">
-                      <div className="flex items-start space-x-3">
-                        <CreditCard className="w-5 h-5 text-gray-400 mt-0.5" />
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">
-                            {order.billingAddress.firstName} {order.billingAddress.lastName}
-                          </p>
-                          <p className="text-sm text-gray-600">{order.billingAddress.phone}</p>
-                          <div className="mt-2 text-sm text-gray-600">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                      <CreditCard className="w-5 h-5 mr-2 text-teal-600" />
+                      Billing Address
+                      {order.shippingAddress.street === order.billingAddress.street && (
+                        <span className="ml-3 text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded-full">
+                          Same as Shipping
+                        </span>
+                      )}
+                    </h3>
+                    <div className="bg-gradient-to-br from-blue-50 to-white rounded-xl p-6 border border-blue-200">
+                      <div className="flex items-start space-x-4">
+                        <div className="flex-shrink-0">
+                          <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                            <CreditCard className="w-6 h-6 text-blue-600" />
+                          </div>
+                        </div>
+                        <div className="flex-1">
+                          {/* Contact Info */}
+                          <div className="mb-4 pb-4 border-b border-blue-100">
+                            <p className="text-base font-semibold text-gray-900">
+                              {order.billingAddress.firstName} {order.billingAddress.lastName}
+                            </p>
+                            <div className="flex items-center space-x-4 mt-2">
+                              <div className="flex items-center space-x-1.5 text-sm text-gray-600">
+                                <Phone className="w-3.5 h-3.5" />
+                                <span>{order.billingAddress.phone}</span>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          {/* Address Details */}
+                          <div className="space-y-2">
                             {order.billingAddress.street && (
-                              <p>{order.billingAddress.street}</p>
+                              <div className="flex items-start space-x-2">
+                                <div className="w-5 h-5 flex-shrink-0 flex items-center justify-center">
+                                  <div className="w-1.5 h-1.5 bg-blue-600 rounded-full"></div>
+                                </div>
+                                <div>
+                                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Street Address</p>
+                                  <p className="text-sm text-gray-900 mt-0.5">{order.billingAddress.street}</p>
+                                </div>
+                              </div>
                             )}
-                            <p>
-                              {order.billingAddress.city}, {order.billingAddress.state}
-                            </p>
-                            <p>
-                              {order.billingAddress.country} {order.billingAddress.postalCode}
-                            </p>
+                            
+                            <div className="flex items-start space-x-2">
+                              <div className="w-5 h-5 flex-shrink-0 flex items-center justify-center">
+                                <div className="w-1.5 h-1.5 bg-blue-600 rounded-full"></div>
+                              </div>
+                              <div>
+                                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">City & State</p>
+                                <p className="text-sm text-gray-900 mt-0.5">
+                                  {order.billingAddress.city}, {order.billingAddress.state}
+                                </p>
+                              </div>
+                            </div>
+                            
+                            <div className="flex items-start space-x-2">
+                              <div className="w-5 h-5 flex-shrink-0 flex items-center justify-center">
+                                <div className="w-1.5 h-1.5 bg-blue-600 rounded-full"></div>
+                              </div>
+                              <div>
+                                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Country</p>
+                                <p className="text-sm text-gray-900 mt-0.5">
+                                  {order.billingAddress.country}
+                                  {order.billingAddress.postalCode && ` - ${order.billingAddress.postalCode}`}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Full Address Display */}
+                          <div className="mt-4 pt-4 border-t border-blue-100">
+                            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Complete Address</p>
+                            <div className="bg-white rounded-lg p-3 border border-blue-100">
+                              <p className="text-sm text-gray-700 leading-relaxed">
+                                {[
+                                  order.billingAddress.street,
+                                  order.billingAddress.city,
+                                  order.billingAddress.state,
+                                  order.billingAddress.postalCode,
+                                  order.billingAddress.country
+                                ].filter(Boolean).join(', ')}
+                              </p>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -576,9 +762,45 @@ export default function OrderDetailsModal({
                 {/* Order Notes */}
                 {order.customerNotes && (
                   <div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Customer Notes</h3>
-                    <div className="bg-gray-50 rounded-xl p-4">
-                      <p className="text-sm text-gray-600">{order.customerNotes}</p>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                      <FileText className="w-5 h-5 mr-2 text-teal-600" />
+                      Customer Notes
+                    </h3>
+                    <div className="bg-yellow-50 rounded-xl p-6 border border-yellow-200">
+                      <div className="flex items-start space-x-3">
+                        <div className="flex-shrink-0">
+                          <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
+                            <FileText className="w-5 h-5 text-yellow-600" />
+                          </div>
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-xs font-medium text-yellow-900 uppercase tracking-wide mb-2">Special Instructions</p>
+                          <p className="text-sm text-yellow-900 leading-relaxed">{order.customerNotes}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Admin Notes (if any) */}
+                {order.adminNotes && (
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                      <AlertTriangle className="w-5 h-5 mr-2 text-orange-600" />
+                      Internal Notes
+                    </h3>
+                    <div className="bg-orange-50 rounded-xl p-6 border border-orange-200">
+                      <div className="flex items-start space-x-3">
+                        <div className="flex-shrink-0">
+                          <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+                            <AlertTriangle className="w-5 h-5 text-orange-600" />
+                          </div>
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-xs font-medium text-orange-900 uppercase tracking-wide mb-2">Admin Notes</p>
+                          <p className="text-sm text-orange-900 leading-relaxed">{order.adminNotes}</p>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
