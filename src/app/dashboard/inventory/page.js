@@ -70,6 +70,16 @@ export default function InventoryPage() {
     return 'In Stock';
   };
 
+  const getCurrentDate = () => {
+    const today = new Date();
+    return today.toLocaleDateString('en-US', { 
+      weekday: 'long',
+      month: 'long', 
+      day: 'numeric',
+      year: 'numeric'
+    });
+  };
+
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-NG', {
       style: 'currency',
@@ -275,7 +285,7 @@ export default function InventoryPage() {
 
   if (isLoading) {
     return (
-      <DashboardLayout title="Inventory Management" subtitle="Today, August 16th 2024">
+      <DashboardLayout title="Inventory Management" subtitle={getCurrentDate()}>
         {/* Stats Cards Skeleton - Responsive */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 md:gap-6 mb-6 md:mb-8">
           {[1, 2, 3, 4, 5].map((i) => (
@@ -420,7 +430,7 @@ export default function InventoryPage() {
   }
 
   return (
-    <DashboardLayout title="Inventory Management" subtitle="Today, August 16th 2024">
+    <DashboardLayout title="Inventory Management" subtitle={getCurrentDate()}>
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
         {statsCards.map((stat, index) => {
