@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Inventory from '@/models/Inventory';
 import { verifySession } from '@/lib/auth';
-import { ActivityTracker } from '@/lib/activityTracker';
 
 // GET - Fetch specific inventory item
 export async function GET(req, { params }) {
@@ -44,11 +43,11 @@ export async function GET(req, { params }) {
 }
 
 // PUT - Update specific inventory item
-export async function PUT(req, { params }) {
+export async function PUT(request, { params }) {
   try {
     await connectToDatabase();
     
-    const user = await verifySession(req);
+    const user = await verifySession(request);
     if (!user) {
       return NextResponse.json(
         { success: false, message: 'Not authenticated' },
@@ -57,66 +56,133 @@ export async function PUT(req, { params }) {
     }
 
     const { id } = await params;
-    const updateData = await req.json();
+    const updates = await request.json();
 
-    // Remove fields that shouldn't be updated via this endpoint
-    delete updateData.userId;
-    delete updateData._id;
-    delete updateData.createdAt;
+    // Sanitize category-specific details to ensure arrays remain arrays
+    const sanitizeCategoryDetails = (details) => {
+      if (!details || typeof details !== 'object') return details;
+      
+      const sanitized = { ...details };
+      
+      // Iterate through all properties
+      Object.keys(sanitized).forEach(key => {
+        const value = sanitized[key];
+        
+        // Check if value is a stringified array
+        if (typeof value === 'string' && value.trim().startsWith('[')) {
+          try {
+            // Try to parse it back to an array
+            sanitized[key] = JSON.parse(value);
+          } catch (e) {
+            // If parsing fails, leave it as is
+            console.warn(`Failed to parse ${key}:`, e);
+          }
+        }
+        
+        // Recursively sanitize nested objects
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+          sanitized[key] = sanitizeCategoryDetails(value);
+        }
+      });
+      
+      return sanitized;
+    };
 
-    // Find the current item to track changes
-    const currentItem = await Inventory.findOne({ _id: id, userId: user._id });
-    if (!currentItem) {
+    // Sanitize all category-specific details
+    if (updates.clothingDetails) {
+      updates.clothingDetails = sanitizeCategoryDetails(updates.clothingDetails);
+    }
+    if (updates.shoesDetails) {
+      updates.shoesDetails = sanitizeCategoryDetails(updates.shoesDetails);
+    }
+    if (updates.accessoriesDetails) {
+      updates.accessoriesDetails = sanitizeCategoryDetails(updates.accessoriesDetails);
+    }
+    if (updates.perfumeDetails) {
+      updates.perfumeDetails = sanitizeCategoryDetails(updates.perfumeDetails);
+    }
+    if (updates.foodDetails) {
+      updates.foodDetails = sanitizeCategoryDetails(updates.foodDetails);
+    }
+    if (updates.beveragesDetails) {
+      updates.beveragesDetails = sanitizeCategoryDetails(updates.beveragesDetails);
+    }
+    if (updates.electronicsDetails) {
+      updates.electronicsDetails = sanitizeCategoryDetails(updates.electronicsDetails);
+    }
+    if (updates.booksDetails) {
+      updates.booksDetails = sanitizeCategoryDetails(updates.booksDetails);
+    }
+    if (updates.homeGardenDetails) {
+      updates.homeGardenDetails = sanitizeCategoryDetails(updates.homeGardenDetails);
+    }
+    if (updates.sportsDetails) {
+      updates.sportsDetails = sanitizeCategoryDetails(updates.sportsDetails);
+    }
+    if (updates.automotiveDetails) {
+      updates.automotiveDetails = sanitizeCategoryDetails(updates.automotiveDetails);
+    }
+    if (updates.healthBeautyDetails) {
+      updates.healthBeautyDetails = sanitizeCategoryDetails(updates.healthBeautyDetails);
+    }
+
+    // Convert numeric string fields to numbers for Food/Beverages
+    if (updates.category === 'Food' && updates.foodDetails) {
+      if (updates.foodDetails.maxOrdersPerDay !== undefined) {
+        updates.foodDetails.maxOrdersPerDay = parseInt(updates.foodDetails.maxOrdersPerDay) || 50;
+      }
+      if (updates.foodDetails.deliveryTime?.value !== undefined) {
+        updates.foodDetails.deliveryTime.value = parseInt(updates.foodDetails.deliveryTime.value) || 30;
+      }
+    }
+    
+    if (updates.category === 'Beverages' && updates.beveragesDetails) {
+      if (updates.beveragesDetails.maxOrdersPerDay !== undefined) {
+        updates.beveragesDetails.maxOrdersPerDay = parseInt(updates.beveragesDetails.maxOrdersPerDay) || 50;
+      }
+      if (updates.beveragesDetails.deliveryTime?.value !== undefined) {
+        updates.beveragesDetails.deliveryTime.value = parseInt(updates.beveragesDetails.deliveryTime.value) || 30;
+      }
+    }
+
+    // Convert numeric fields for Books
+    if (updates.category === 'Books' && updates.booksDetails) {
+      if (updates.booksDetails.publicationYear !== undefined) {
+        updates.booksDetails.publicationYear = parseInt(updates.booksDetails.publicationYear) || null;
+      }
+      if (updates.booksDetails.pages !== undefined) {
+        updates.booksDetails.pages = parseInt(updates.booksDetails.pages) || null;
+      }
+    }
+
+    // Find and update the item
+    const item = await Inventory.findOneAndUpdate(
+      { _id: id, userId: user._id },
+      { 
+        ...updates,
+        lastUpdated: new Date() 
+      },
+      { new: true, runValidators: true }
+    );
+
+    if (!item) {
       return NextResponse.json(
-        { success: false, message: 'Inventory item not found' },
+        { success: false, message: 'Item not found' },
         { status: 404 }
       );
     }
 
-    // Track what changed
-    const changes = {};
-    const significantFields = ['productName', 'category', 'costPrice', 'sellingPrice', 'quantityInStock'];
-    
-    for (const field of significantFields) {
-      if (updateData[field] !== undefined && updateData[field] !== currentItem[field]) {
-        changes[field] = {
-          from: currentItem[field],
-          to: updateData[field]
-        };
-      }
-    }
-
-    // Update the item
-    const item = await Inventory.findOneAndUpdate(
-      { _id: id, userId: user._id },
-      { ...updateData, lastUpdated: new Date() },
-      { new: true, runValidators: true }
-    );
-
-    // Track the activity if there were changes
-    if (Object.keys(changes).length > 0) {
-      await ActivityTracker.trackInventoryUpdated(user._id, item, currentItem.toObject(), changes);
-    }
-
     return NextResponse.json({
       success: true,
-      message: 'Inventory item updated successfully',
       data: item
     });
-
   } catch (error) {
-    console.error('Inventory item update error:', error);
-    
-    if (error.name === 'ValidationError') {
-      const messages = Object.values(error.errors).map(err => err.message);
-      return NextResponse.json(
-        { success: false, message: messages.join(', ') },
-        { status: 400 }
-      );
-    }
-
+    console.error('Error updating inventory item:', error);
     return NextResponse.json(
-      { success: false, message: 'Internal server error' },
+      { 
+        success: false,
+        error: error.message || 'Failed to update inventory item' 
+      },
       { status: 500 }
     );
   }

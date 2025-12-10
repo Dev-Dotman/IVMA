@@ -464,7 +464,7 @@ export default function InventoryPage() {
       <div className="bg-white rounded-2xl border border-gray-100">
         <div className="p-6 border-b border-gray-100">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-gray-900">Inventory Overview</h2>
+            <h2 className="text-xl font-semibold text-gray-900">Catalogue Overview</h2>
             <div className="flex items-center space-x-3">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />

@@ -1,5 +1,476 @@
 import mongoose from 'mongoose';
 
+// Category-specific schemas
+const ClothingDetailsSchema = new mongoose.Schema({
+  gender: {
+    type: String,
+    enum: ['Men', 'Women', 'Unisex', 'Kids', 'Babies'],
+    default: 'Unisex'
+  },
+  productType: {
+    type: String,
+    enum: [
+      'T-shirts', 'Polo shirts', 'Hoodies', 'Sweatshirts', 'Shirts', 'Crop tops', 'Tank tops',
+      'Jeans', 'Shorts', 'Joggers', 'Cargo pants', 'Trousers', 'Leggings',
+      'Jackets', 'Coats', 'Blazers', 'Windbreakers',
+      'Casual dresses', 'Bodycon', 'Maxi dresses', 'Mini skirts', 'Pencil skirts',
+      'Gym tops', 'Track pants', 'Sports bras', 'Performance shorts',
+      'Underwear', 'Sleepwear', 'Loungewear', 'Socks', 'Other'
+    ]
+  },
+  sizes: [{
+    type: String,
+    enum: ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'Plus Size', 'Kids 2-4', 'Kids 5-7', 'Kids 8-12', 'Custom']
+  }],
+  colors: [{
+    type: String,
+    trim: true
+  }],
+  material: {
+    type: String,
+    enum: [
+      'Cotton', 'Polyester', 'Lycra', 'Wool', 'Denim', 'Linen', 'Fleece', 'Silk', 'Velvet',
+      'Ankara', 'Aso Oke', 'Kente', 'Adire', 'Kampala', 'Dashiki', 'Batik', 
+      'Mixed', 'Other'
+    ]
+  },
+  style: [{
+    type: String,
+    enum: ['Minimalist', 'Vintage', 'Urban/Street', 'Athleisure', 'Luxury', 'Oversized', 'Slim fit', 'Regular fit', 'Other']
+  }],
+  occasion: [{
+    type: String,
+    enum: [
+      'Casual', 'Office/Corporate', 'Party', 'Streetwear', 'Sports/Fitness', 'Traditional', 'Outdoor',
+      'Owambe', 'Wedding', 'Church/Religious', 'Beach', 'Formal Event', 'Other'
+    ]
+  }]
+}, { _id: false });
+
+const ShoesDetailsSchema = new mongoose.Schema({
+  gender: {
+    type: String,
+    enum: ['Men', 'Women', 'Unisex', 'Kids', 'Babies'],
+    default: 'Unisex'
+  },
+  shoeType: {
+    type: String,
+    enum: [
+      'Sneakers', 'Sandals', 'Slippers', 'Boots', 'Heels', 'Flats', 
+      'Loafers', 'Oxfords', 'Sports shoes', 'Canvas shoes', 'Slides', 'Other'
+    ]
+  },
+  sizes: [{
+    type: String // e.g., '38', '39', '40', 'UK 7', 'US 9'
+  }],
+  colors: [{
+    type: String,
+    trim: true
+  }],
+  material: {
+    type: String,
+    enum: ['Leather', 'Canvas', 'Suede', 'Rubber', 'Synthetic', 'Fabric', 'Mixed', 'Other']
+  },
+  occasion: [{
+    type: String,
+    enum: [
+      'Casual', 'Office/Corporate', 'Party', 'Sports/Fitness', 'Outdoor', 'Beach',
+      'Owambe', 'Wedding', 'Church/Religious', 'Formal Event', 'Other'
+    ]
+  }]
+}, { _id: false });
+
+const AccessoriesDetailsSchema = new mongoose.Schema({
+  accessoryType: {
+    type: String,
+    enum: [
+      'Bags', 'Handbags', 'Backpacks', 'Wallets', 'Belts', 'Watches', 
+      'Jewelry', 'Sunglasses', 'Hats/Caps', 'Scarves', 'Ties', 'Other'
+    ]
+  },
+  gender: {
+    type: String,
+    enum: ['Men', 'Women', 'Unisex', 'Kids'],
+    default: 'Unisex'
+  },
+  colors: [{
+    type: String,
+    trim: true
+  }],
+  material: {
+    type: String,
+    enum: ['Leather', 'Metal', 'Plastic', 'Fabric', 'Gold', 'Silver', 'Stainless Steel', 'Wood', 'Mixed', 'Other']
+  }
+}, { _id: false });
+
+const PerfumeDetailsSchema = new mongoose.Schema({
+  fragranceType: {
+    type: String,
+    enum: [
+      'Eau de Parfum', 'Eau de Toilette', 'Cologne', 'Body Spray', 
+      'Perfume Oil', 'Body Mist', 'Other'
+    ]
+  },
+  gender: {
+    type: String,
+    enum: ['Men', 'Women', 'Unisex'],
+    default: 'Unisex'
+  },
+  volume: {
+    type: String, // e.g., '50ml', '100ml', '150ml'
+    trim: true
+  },
+  scentFamily: {
+    type: String,
+    enum: [
+      'Floral', 'Woody', 'Fresh/Citrus', 'Oriental/Spicy', 'Fruity', 
+      'Aquatic', 'Gourmand', 'Green', 'Other'
+    ]
+  },
+  concentration: {
+    type: String,
+    enum: ['Light', 'Moderate', 'Strong', 'Very Strong']
+  },
+  occasion: [{
+    type: String,
+    enum: [
+      'Everyday', 'Office', 'Evening/Night', 'Special Occasion', 'Sports',
+      'Owambe', 'Wedding', 'Church/Religious', 'Date Night', 'Other'
+    ]
+  }]
+}, { _id: false });
+
+const FoodDetailsSchema = new mongoose.Schema({
+  foodType: {
+    type: String,
+    enum: [
+      'Ready-to-Eat Meals', 'Meal Prep/Packaged Food', 'Baked Goods', 
+      'Snacks & Small Chops', 'Traditional Nigerian Dishes', 'Continental Dishes',
+      'Fast Food', 'Healthy/Organic Meals', 'Frozen Foods', 'Other'
+    ]
+  },
+  cuisineType: [{
+    type: String,
+    enum: ['Nigerian', 'Continental', 'Asian', 'Fast Food', 'Healthy/Vegan', 'Desserts', 'Other']
+  }],
+  servingSize: {
+    type: String,
+    trim: true
+  },
+  ingredients: [{
+    type: String,
+    trim: true
+  }],
+  allergens: [{
+    type: String,
+    enum: ['Nuts', 'Dairy', 'Eggs', 'Gluten', 'Soy', 'Shellfish', 'Fish', 'None']
+  }],
+  spiceLevel: {
+    type: String,
+    enum: ['Mild', 'Medium', 'Hot', 'Extra Hot', 'Not Spicy']
+  },
+  deliveryLocations: {
+    states: [{
+      stateName: String,
+      cities: [String],
+      coverAllCities: { type: Boolean, default: false }
+    }]
+  },
+  orderingHours: [{
+    day: {
+      type: String,
+      enum: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+    },
+    isAvailable: { type: Boolean, default: true },
+    startTime: String,
+    endTime: String
+  }],
+  deliveryTime: {
+    value: Number,
+    unit: {
+      type: String,
+      enum: ['minutes', 'hours', 'days'],
+      default: 'minutes'
+    }
+  },
+  maxOrdersPerDay: {
+    type: Number,
+    min: [1, 'Max orders per day must be at least 1'],
+    default: 50
+  }
+}, { _id: false });
+
+const BeveragesDetailsSchema = new mongoose.Schema({
+  beverageType: {
+    type: String,
+    enum: [
+      'Soft Drinks', 'Juices', 'Energy Drinks', 'Water', 'Tea/Coffee',
+      'Smoothies', 'Alcoholic Beverages', 'Traditional Drinks', 'Other'
+    ]
+  },
+  volume: {
+    type: String,
+    trim: true
+  },
+  packaging: {
+    type: String,
+    enum: ['Bottle', 'Can', 'Sachet', 'Carton', 'Cup', 'Keg', 'Other']
+  },
+  ingredients: [{
+    type: String,
+    trim: true
+  }],
+  isAlcoholic: {
+    type: Boolean,
+    default: false
+  },
+  alcoholContent: {
+    type: String,
+    trim: true
+  },
+  isCarbonated: {
+    type: Boolean,
+    default: false
+  },
+  flavorProfile: [{
+    type: String,
+    enum: ['Sweet', 'Sour', 'Bitter', 'Fruity', 'Citrus', 'Herbal', 'Spicy', 'Other']
+  }],
+  deliveryLocations: {
+    states: [{
+      stateName: String,
+      cities: [String],
+      coverAllCities: { type: Boolean, default: false }
+    }]
+  },
+  orderingHours: [{
+    day: {
+      type: String,
+      enum: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+    },
+    isAvailable: { type: Boolean, default: true },
+    startTime: String,
+    endTime: String
+  }],
+  deliveryTime: {
+    value: Number,
+    unit: {
+      type: String,
+      enum: ['minutes', 'hours', 'days'],
+      default: 'minutes'
+    }
+  },
+  maxOrdersPerDay: {
+    type: Number,
+    min: [1, 'Max orders per day must be at least 1'],
+    default: 50
+  }
+}, { _id: false });
+
+const ElectronicsDetailsSchema = new mongoose.Schema({
+  productType: {
+    type: String,
+    enum: [
+      'Smartphones', 'Tablets', 'Laptops', 'Desktops', 'Smartwatches', 'Headphones',
+      'Speakers', 'Cameras', 'Gaming Consoles', 'TVs', 'Home Appliances',
+      'Computer Accessories', 'Phone Accessories', 'Other'
+    ]
+  },
+  brand: {
+    type: String,
+    trim: true
+  },
+  model: {
+    type: String,
+    trim: true
+  },
+  specifications: {
+    processor: String,
+    ram: String,
+    storage: String,
+    screenSize: String,
+    batteryCapacity: String,
+    camera: String,
+    other: String
+  },
+  condition: {
+    type: String,
+    enum: ['New', 'Refurbished', 'Used - Like New', 'Used - Good', 'Used - Fair']
+  },
+  warranty: {
+    hasWarranty: { type: Boolean, default: false },
+    duration: String,
+    type: String
+  },
+  colors: [String],
+  connectivity: [{
+    type: String,
+    enum: ['WiFi', 'Bluetooth', '4G', '5G', 'USB-C', 'HDMI', 'Ethernet', 'Other']
+  }]
+}, { _id: false });
+
+const BooksDetailsSchema = new mongoose.Schema({
+  bookType: {
+    type: String,
+    enum: [
+      'Fiction', 'Non-Fiction', 'Educational', 'Children', 'Comics/Manga',
+      'Biography', 'Self-Help', 'Religious', 'Business', 'Cookbook', 'Other'
+    ]
+  },
+  author: {
+    type: String,
+    trim: true
+  },
+  publisher: {
+    type: String,
+    trim: true
+  },
+  isbn: {
+    type: String,
+    trim: true
+  },
+  publicationYear: Number,
+  language: {
+    type: String,
+    default: 'English'
+  },
+  pages: Number,
+  format: {
+    type: String,
+    enum: ['Hardcover', 'Paperback', 'eBook', 'Audiobook']
+  },
+  condition: {
+    type: String,
+    enum: ['New', 'Like New', 'Very Good', 'Good', 'Acceptable']
+  },
+  genre: [String]
+}, { _id: false });
+
+const HomeGardenDetailsSchema = new mongoose.Schema({
+  productType: {
+    type: String,
+    enum: [
+      'Furniture', 'Decor', 'Kitchen & Dining', 'Bedding', 'Bathroom',
+      'Lighting', 'Storage', 'Garden Tools', 'Plants', 'Outdoor Furniture',
+      'Home Improvement', 'Cleaning Supplies', 'Other'
+    ]
+  },
+  room: [{
+    type: String,
+    enum: ['Living Room', 'Bedroom', 'Kitchen', 'Bathroom', 'Dining Room', 
+           'Office', 'Garden', 'Outdoor', 'All Rooms']
+  }],
+  material: {
+    type: String,
+    enum: ['Wood', 'Metal', 'Plastic', 'Glass', 'Fabric', 'Ceramic', 'Stone', 'Mixed', 'Other']
+  },
+  dimensions: {
+    length: String,
+    width: String,
+    height: String,
+    weight: String
+  },
+  color: [String],
+  assemblyRequired: {
+    type: Boolean,
+    default: false
+  },
+  careInstructions: String
+}, { _id: false });
+
+const SportsDetailsSchema = new mongoose.Schema({
+  sportType: {
+    type: String,
+    enum: [
+      'Football/Soccer', 'Basketball', 'Tennis', 'Fitness & Gym', 'Running',
+      'Swimming', 'Cycling', 'Boxing', 'Yoga', 'Outdoor Sports',
+      'Team Sports', 'Water Sports', 'Other'
+    ]
+  },
+  productType: {
+    type: String,
+    enum: [
+      'Equipment', 'Apparel', 'Footwear', 'Accessories', 'Protective Gear',
+      'Training Aids', 'Nutrition', 'Other'
+    ]
+  },
+  brand: String,
+  sizes: [String],
+  colors: [String],
+  material: String,
+  suitableFor: [{
+    type: String,
+    enum: ['Men', 'Women', 'Unisex', 'Kids', 'Professional', 'Amateur']
+  }],
+  performanceLevel: {
+    type: String,
+    enum: ['Beginner', 'Intermediate', 'Advanced', 'Professional', 'All Levels']
+  }
+}, { _id: false });
+
+const AutomotiveDetailsSchema = new mongoose.Schema({
+  productType: {
+    type: String,
+    enum: [
+      'Spare Parts', 'Tires', 'Batteries', 'Engine Parts', 'Body Parts',
+      'Interior Accessories', 'Exterior Accessories', 'Electronics',
+      'Tools', 'Oils & Fluids', 'Car Care', 'Other'
+    ]
+  },
+  compatibleVehicles: [{
+    make: String,
+    model: String,
+    year: String
+  }],
+  brand: String,
+  partNumber: String,
+  condition: {
+    type: String,
+    enum: ['New', 'OEM', 'Aftermarket', 'Refurbished', 'Used']
+  },
+  warranty: {
+    hasWarranty: { type: Boolean, default: false },
+    duration: String
+  },
+  specifications: {
+    type: String,
+    trim: true
+  }
+}, { _id: false });
+
+const HealthBeautyDetailsSchema = new mongoose.Schema({
+  productType: {
+    type: String,
+    enum: [
+      'Skincare', 'Haircare', 'Makeup', 'Fragrance', 'Personal Care',
+      'Health Supplements', 'Medical Supplies', 'Fitness & Nutrition',
+      'Bath & Body', 'Oral Care', 'Men\'s Grooming', 'Other'
+    ]
+  },
+  brand: String,
+  skinType: [{
+    type: String,
+    enum: ['Normal', 'Oily', 'Dry', 'Combination', 'Sensitive', 'All Skin Types']
+  }],
+  ingredients: [String],
+  suitableFor: [{
+    type: String,
+    enum: ['Men', 'Women', 'Unisex', 'Kids', 'All Ages']
+  }],
+  volume: String,
+  scent: String,
+  benefits: [String],
+  applicationArea: [{
+    type: String,
+    enum: ['Face', 'Body', 'Hair', 'Hands', 'Feet', 'Nails', 'Eyes', 'Lips', 'Full Body']
+  }],
+  isOrganic: {
+    type: Boolean,
+    default: false
+  },
+  expiryDate: Date
+}, { _id: false });
+
 const inventorySchema = new mongoose.Schema({
   // User reference
   userId: {
@@ -43,7 +514,7 @@ const inventorySchema = new mongoose.Schema({
   unitOfMeasure: {
     type: String,
     required: [true, 'Unit of measure is required'],
-    enum: ['Piece', 'Pack', 'Carton', 'Kg', 'Liter', 'Meter', 'Box', 'Dozen', 'Other'],
+    enum: ['Piece', 'Pack', 'Carton', 'Kg', 'Liter', 'Meter', 'Box', 'Dozen', 'Plate (Takeaway)', 'Bowl', 'Wrap', 'Other'],
     default: 'Piece'
   },
 
@@ -126,7 +597,67 @@ const inventorySchema = new mongoose.Schema({
   lastUpdated: {
     type: Date,
     default: Date.now
-  }
+  },
+
+  // Category-specific details
+  clothingDetails: {
+    type: ClothingDetailsSchema,
+    default: null
+  },
+  shoesDetails: {
+    type: ShoesDetailsSchema,
+    default: null
+  },
+  accessoriesDetails: {
+    type: AccessoriesDetailsSchema,
+    default: null
+  },
+  perfumeDetails: {
+    type: PerfumeDetailsSchema,
+    default: null
+  },
+  foodDetails: {
+    type: FoodDetailsSchema,
+    default: null
+  },
+  beveragesDetails: {
+    type: BeveragesDetailsSchema,
+    default: null
+  },
+  electronicsDetails: {
+    type: ElectronicsDetailsSchema,
+    default: null
+  },
+  booksDetails: {
+    type: BooksDetailsSchema,
+    default: null
+  },
+  homeGardenDetails: {
+    type: HomeGardenDetailsSchema,
+    default: null
+  },
+  sportsDetails: {
+    type: SportsDetailsSchema,
+    default: null
+  },
+  automotiveDetails: {
+    type: AutomotiveDetailsSchema,
+    default: null
+  },
+  healthBeautyDetails: {
+    type: HealthBeautyDetailsSchema,
+    default: null
+  },
+
+  // Common fields for all categories
+  tags: [{
+    type: String,
+    enum: [
+      'New arrivals', 'Best sellers', 'Limited edition', 
+      'Summer', 'Winter', 'Harmattan', 'Rainy season',
+      'Clearance', 'Sale', 'Hot deal', 'Trending', 'Featured'
+    ]
+  }],
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
@@ -213,6 +744,25 @@ inventorySchema.pre('save', async function(next) {
       this.sku = `ITM-${Date.now().toString().slice(-6)}`;
     }
   }
+  next();
+});
+
+// Pre-save middleware to clean up unused category details
+inventorySchema.pre('save', function(next) {
+  // Clear category-specific details that don't match the category
+  if (this.category !== 'Clothing') this.clothingDetails = null;
+  if (this.category !== 'Shoes') this.shoesDetails = null;
+  if (this.category !== 'Accessories') this.accessoriesDetails = null;
+  if (this.category !== 'Perfumes') this.perfumeDetails = null;
+  if (this.category !== 'Food') this.foodDetails = null;
+  if (this.category !== 'Beverages') this.beveragesDetails = null;
+  if (this.category !== 'Electronics') this.electronicsDetails = null;
+  if (this.category !== 'Books') this.booksDetails = null;
+  if (this.category !== 'Home & Garden') this.homeGardenDetails = null;
+  if (this.category !== 'Sports') this.sportsDetails = null;
+  if (this.category !== 'Automotive') this.automotiveDetails = null;
+  if (this.category !== 'Health & Beauty') this.healthBeautyDetails = null;
+
   next();
 });
 

@@ -216,6 +216,35 @@ export async function POST(req) {
 
     const inventoryData = await req.json();
 
+    // Convert numeric string fields to numbers for Food/Beverages categories
+    if (inventoryData.category === 'Food' && inventoryData.foodDetails) {
+      if (inventoryData.foodDetails.maxOrdersPerDay) {
+        inventoryData.foodDetails.maxOrdersPerDay = parseInt(inventoryData.foodDetails.maxOrdersPerDay) || 50;
+      }
+      if (inventoryData.foodDetails.deliveryTime?.value) {
+        inventoryData.foodDetails.deliveryTime.value = parseInt(inventoryData.foodDetails.deliveryTime.value) || 30;
+      }
+    }
+    
+    if (inventoryData.category === 'Beverages' && inventoryData.beveragesDetails) {
+      if (inventoryData.beveragesDetails.maxOrdersPerDay) {
+        inventoryData.beveragesDetails.maxOrdersPerDay = parseInt(inventoryData.beveragesDetails.maxOrdersPerDay) || 50;
+      }
+      if (inventoryData.beveragesDetails.deliveryTime?.value) {
+        inventoryData.beveragesDetails.deliveryTime.value = parseInt(inventoryData.beveragesDetails.deliveryTime.value) || 30;
+      }
+    }
+
+    // Convert numeric fields for Books
+    if (inventoryData.category === 'Books' && inventoryData.booksDetails) {
+      if (inventoryData.booksDetails.publicationYear) {
+        inventoryData.booksDetails.publicationYear = parseInt(inventoryData.booksDetails.publicationYear) || null;
+      }
+      if (inventoryData.booksDetails.pages) {
+        inventoryData.booksDetails.pages = parseInt(inventoryData.booksDetails.pages) || null;
+      }
+    }
+
     // Check if we can start a transaction (requires replica set)
     let useTransaction = false;
     let session = null;

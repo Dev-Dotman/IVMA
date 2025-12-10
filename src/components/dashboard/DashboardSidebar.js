@@ -11,7 +11,8 @@ import {
   Receipt,
   BarChart3, 
   Settings,
-  Truck  // Add Truck icon for deliveries
+  Truck,
+  Wrench  // Add Wrench icon for services
 } from "lucide-react";
 
 export default function DashboardSidebar() {
@@ -21,13 +22,14 @@ export default function DashboardSidebar() {
 
   const menuItems = [
     { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard/overview' },
-    { name: 'Inventory', icon: Package, path: '/dashboard/inventory' },
+    { name: 'Catalogue', icon: Package, path: '/dashboard/inventory' },
+    { name: 'Services', icon: Wrench, path: '/dashboard/services' }, // Add services menu item
     { name: 'Store', icon: Store, path: '/dashboard/store' },
     { name: 'Sales Terminal (POS)', icon: CreditCard, path: '/dashboard/pos' },
     { name: 'Website', icon: Globe, path: '/dashboard/website' },
     { name: 'Orders', icon: ShoppingBag, path: '/dashboard/orders' },
     { name: 'Sales', icon: Receipt, path: '/dashboard/sales' },
-    { name: 'Deliveries', icon: Truck, path: '/dashboard/deliveries' }, // Add deliveries menu item
+    { name: 'Deliveries', icon: Truck, path: '/dashboard/deliveries' },
     { name: 'Reports & Analysis', icon: BarChart3, path: '/dashboard/reports' },
     { name: 'Settings', icon: Settings, path: '/dashboard/settings' },
   ];

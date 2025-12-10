@@ -7,7 +7,7 @@ import Head from "next/head";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata = {
-  title: "IVMA - Inventory Management System",
+  title: "IVMA - Ecommerce Business Management System",
   description: "Professional business management system for businesses",
   icons: {
     icon: [

@@ -50,6 +50,8 @@ export default function InventoryDetailPage() {
     } catch (error) {
       console.error('Error fetching item details:', error);
       setError('Failed to load item details');
+    } finally {
+      setLoading(false); // Always set loading to false, even on error
     }
   };
 
@@ -131,14 +133,16 @@ export default function InventoryDetailPage() {
       });
 
       if (response.success) {
+        // Refresh the item details after successful update
         await fetchItemDetails();
+        setIsEditModalOpen(false); // Close modal after refresh
         return response;
       } else {
         throw new Error(response.message || 'Failed to update item');
       }
     } catch (error) {
       console.error('Error updating item:', error);
-      throw error;
+      throw error; // Re-throw to let modal handle the error
     }
   };
 
