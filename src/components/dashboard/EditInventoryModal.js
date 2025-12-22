@@ -105,7 +105,7 @@ export default function EditInventoryModal({ isOpen, onClose, onSubmit, item }) 
         qrCode: item.qrCode || '',
         notes: item.notes || '',
         tags: item.tags || [],
-        // Category-specific details - preserve as-is from database
+        // Category-specific details - preserve exactly as-is from database
         clothingDetails: item.clothingDetails || null,
         shoesDetails: item.shoesDetails || null,
         accessoriesDetails: item.accessoriesDetails || null,
@@ -119,7 +119,8 @@ export default function EditInventoryModal({ isOpen, onClose, onSubmit, item }) 
         automotiveDetails: item.automotiveDetails || null,
         healthBeautyDetails: item.healthBeautyDetails || null
       });
-      handleCategoryChange(item.category || '');
+      
+      // Set current image
       setCurrentImage(item.image || null);
       setImagePreview(null);
       setSelectedImage(null);
@@ -127,13 +128,15 @@ export default function EditInventoryModal({ isOpen, onClose, onSubmit, item }) 
     }
   }, [item, isOpen]);
 
-  // Handle category change - initialize category-specific details if not present
+  // Handle category change - DON'T initialize if data already exists
   const handleCategoryChange = (value) => {
     handleChange({ target: { name: 'category', value } });
     
-    // Initialize category-specific details if switching to a category that needs them
+    // Only initialize category-specific details if they don't already exist
+    // This prevents overwriting existing data when editing
     const newFormData = { ...formData, category: value };
     
+    // Only initialize if switching to a NEW category that doesn't have details yet
     if (value === 'Food' && !formData.foodDetails) {
       newFormData.foodDetails = {
         foodType: '',

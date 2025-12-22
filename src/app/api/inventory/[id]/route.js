@@ -56,7 +56,7 @@ export async function PUT(request, { params }) {
     }
 
     const userId = user._id;
-    const { id } = params;
+    const { id } = await params;
     const updateData = await request.json();
 
     // Find the inventory item
