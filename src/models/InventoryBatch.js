@@ -1,5 +1,39 @@
 import mongoose from 'mongoose';
 
+// Variant details for batch tracking
+const BatchVariantSchema = new mongoose.Schema({
+  size: {
+    type: String,
+    required: [true, 'Variant size is required'],
+    trim: true
+  },
+  color: {
+    type: String,
+    required: [true, 'Variant color is required'],
+    trim: true
+  },
+  variantSku: {
+    type: String,
+    trim: true // Reference to main variant SKU
+  },
+  quantityIn: {
+    type: Number,
+    required: [true, 'Variant quantity in is required'],
+    min: [0, 'Quantity cannot be negative'],
+    default: 0
+  },
+  quantitySold: {
+    type: Number,
+    min: [0, 'Quantity sold cannot be negative'],
+    default: 0
+  },
+  quantityRemaining: {
+    type: Number,
+    min: [0, 'Quantity remaining cannot be negative'],
+    default: 0
+  }
+}, { _id: false });
+
 const inventoryBatchSchema = new mongoose.Schema({
   // References
   userId: {
@@ -24,7 +58,14 @@ const inventoryBatchSchema = new mongoose.Schema({
     index: true
   },
 
-  // Quantity tracking
+  // Variant tracking
+  hasVariants: {
+    type: Boolean,
+    default: false
+  },
+  variants: [BatchVariantSchema],
+
+  // Quantity tracking (for non-variant or total batch)
   quantityIn: {
     type: Number,
     required: [true, 'Initial quantity is required'],
@@ -142,12 +183,26 @@ inventoryBatchSchema.virtual('turnoverRate').get(function() {
 
 // Pre-save middleware
 inventoryBatchSchema.pre('save', function(next) {
-  // Auto-calculate quantity remaining
-  this.quantityRemaining = this.quantityIn - this.quantitySold;
-  
-  // Ensure quantity remaining is not negative
-  if (this.quantityRemaining < 0) {
-    this.quantityRemaining = 0;
+  // If batch has variants, sync total quantities from variants
+  if (this.hasVariants && this.variants && this.variants.length > 0) {
+    // Calculate totals from all variants
+    this.quantityIn = this.variants.reduce((sum, v) => sum + (v.quantityIn || 0), 0);
+    this.quantitySold = this.variants.reduce((sum, v) => sum + (v.quantitySold || 0), 0);
+    this.quantityRemaining = this.variants.reduce((sum, v) => sum + (v.quantityRemaining || 0), 0);
+    
+    // Update each variant's remaining quantity
+    this.variants.forEach(variant => {
+      variant.quantityRemaining = (variant.quantityIn || 0) - (variant.quantitySold || 0);
+      if (variant.quantityRemaining < 0) variant.quantityRemaining = 0;
+    });
+  } else {
+    // Auto-calculate quantity remaining for non-variant batches
+    this.quantityRemaining = this.quantityIn - this.quantitySold;
+    
+    // Ensure quantity remaining is not negative
+    if (this.quantityRemaining < 0) {
+      this.quantityRemaining = 0;
+    }
   }
   
   // Update status based on quantity and expiry
@@ -351,71 +406,219 @@ inventoryBatchSchema.statics.getBatchStats = async function(userId) {
   };
 };
 
+// Static method to get variant-specific batch stats
+inventoryBatchSchema.statics.getVariantBatchStats = async function(productId, size, color) {
+  const pipeline = [
+    { 
+      $match: { 
+        productId: new mongoose.Types.ObjectId(productId),
+        hasVariants: true,
+        'variants.size': size,
+        'variants.color': color
+      } 
+    },
+    { $unwind: '$variants' },
+    { 
+      $match: { 
+        'variants.size': size, 
+        'variants.color': color 
+      } 
+    },
+    {
+      $group: {
+        _id: null,
+        totalBatches: { $sum: 1 },
+        totalQuantityIn: { $sum: '$variants.quantityIn' },
+        totalQuantitySold: { $sum: '$variants.quantitySold' },
+        totalQuantityRemaining: { $sum: '$variants.quantityRemaining' }
+      }
+    }
+  ];
+
+  const result = await this.aggregate(pipeline);
+  return result[0] || {
+    totalBatches: 0,
+    totalQuantityIn: 0,
+    totalQuantitySold: 0,
+    totalQuantityRemaining: 0
+  };
+};
+
 // Instance methods
-inventoryBatchSchema.methods.sellFromBatch = async function(quantityToSell) {
+inventoryBatchSchema.methods.sellFromBatch = async function(quantityToSell, size = null, color = null) {
   if (quantityToSell <= 0) {
     throw new Error('Quantity to sell must be greater than 0');
   }
   
-  if (quantityToSell > this.quantityRemaining) {
-    throw new Error('Cannot sell more than remaining quantity in batch');
+  // If batch has variants and size/color specified, sell from specific variant
+  if (this.hasVariants && size && color) {
+    const variant = this.variants.find(v => v.size === size && v.color === color);
+    
+    if (!variant) {
+      throw new Error(`Variant ${color} - ${size} not found in this batch`);
+    }
+    
+    if (quantityToSell > variant.quantityRemaining) {
+      throw new Error(`Cannot sell more than remaining quantity (${variant.quantityRemaining}) for ${color} - ${size}`);
+    }
+    
+    variant.quantitySold += quantityToSell;
+    variant.quantityRemaining -= quantityToSell;
+    
+    // Totals will be recalculated in pre-save middleware
+  } else {
+    // Sell from non-variant batch
+    if (quantityToSell > this.quantityRemaining) {
+      throw new Error('Cannot sell more than remaining quantity in batch');
+    }
+    
+    this.quantitySold += quantityToSell;
+    this.quantityRemaining -= quantityToSell;
   }
-  
-  this.quantitySold += quantityToSell;
-  this.quantityRemaining -= quantityToSell;
   
   return await this.save();
 };
 
-inventoryBatchSchema.methods.removeFromBatch = async function(quantityToRemove, reason = '') {
+inventoryBatchSchema.methods.removeFromBatch = async function(quantityToRemove, reason = '', size = null, color = null) {
   if (quantityToRemove <= 0) {
     throw new Error('Quantity to remove must be greater than 0');
   }
   
-  if (quantityToRemove > this.quantityRemaining) {
-    throw new Error('Cannot remove more than remaining quantity in batch');
-  }
-  
-  this.quantitySold += quantityToRemove; // Track as "sold" (removed from inventory)
-  this.quantityRemaining -= quantityToRemove;
-  
-  // Add note about removal
-  if (reason) {
-    this.notes = this.notes ? `${this.notes}\nRemoved: ${reason} (-${quantityToRemove})` : `Removed: ${reason} (-${quantityToRemove})`;
+  // If batch has variants and size/color specified
+  if (this.hasVariants && size && color) {
+    const variant = this.variants.find(v => v.size === size && v.color === color);
+    
+    if (!variant) {
+      throw new Error(`Variant ${color} - ${size} not found in this batch`);
+    }
+    
+    if (quantityToRemove > variant.quantityRemaining) {
+      throw new Error(`Cannot remove more than remaining quantity (${variant.quantityRemaining}) for ${color} - ${size}`);
+    }
+    
+    variant.quantitySold += quantityToRemove;
+    variant.quantityRemaining -= quantityToRemove;
+    
+    // Add note about removal
+    if (reason) {
+      this.notes = this.notes 
+        ? `${this.notes}\nRemoved ${color}-${size}: ${reason} (-${quantityToRemove})` 
+        : `Removed ${color}-${size}: ${reason} (-${quantityToRemove})`;
+    }
+  } else {
+    if (quantityToRemove > this.quantityRemaining) {
+      throw new Error('Cannot remove more than remaining quantity in batch');
+    }
+    
+    this.quantitySold += quantityToRemove;
+    this.quantityRemaining -= quantityToRemove;
+    
+    // Add note about removal
+    if (reason) {
+      this.notes = this.notes 
+        ? `${this.notes}\nRemoved: ${reason} (-${quantityToRemove})` 
+        : `Removed: ${reason} (-${quantityToRemove})`;
+    }
   }
   
   return await this.save();
 };
 
-inventoryBatchSchema.methods.addToBatch = async function(quantityToAdd, reason = '') {
+inventoryBatchSchema.methods.addToBatch = async function(quantityToAdd, reason = '', size = null, color = null) {
   if (quantityToAdd <= 0) {
     throw new Error('Quantity to add must be greater than 0');
   }
   
-  this.quantityIn += quantityToAdd;
-  this.quantityRemaining += quantityToAdd;
-  
-  // Add note about addition
-  if (reason) {
-    this.notes = this.notes ? `${this.notes}\nAdded: ${reason} (+${quantityToAdd})` : `Added: ${reason} (+${quantityToAdd})`;
+  // If batch has variants and size/color specified
+  if (this.hasVariants && size && color) {
+    let variant = this.variants.find(v => v.size === size && v.color === color);
+    
+    if (!variant) {
+      // Create new variant if it doesn't exist
+      variant = {
+        size,
+        color,
+        variantSku: `${this.batchCode}-${color.substring(0, 3).toUpperCase()}-${size}`,
+        quantityIn: quantityToAdd,
+        quantitySold: 0,
+        quantityRemaining: quantityToAdd
+      };
+      this.variants.push(variant);
+    } else {
+      variant.quantityIn += quantityToAdd;
+      variant.quantityRemaining += quantityToAdd;
+    }
+    
+    // Add note about addition
+    if (reason) {
+      this.notes = this.notes 
+        ? `${this.notes}\nAdded ${color}-${size}: ${reason} (+${quantityToAdd})` 
+        : `Added ${color}-${size}: ${reason} (+${quantityToAdd})`;
+    }
+  } else {
+    this.quantityIn += quantityToAdd;
+    this.quantityRemaining += quantityToAdd;
+    
+    // Add note about addition
+    if (reason) {
+      this.notes = this.notes 
+        ? `${this.notes}\nAdded: ${reason} (+${quantityToAdd})` 
+        : `Added: ${reason} (+${quantityToAdd})`;
+    }
   }
   
   return await this.save();
 };
 
-inventoryBatchSchema.methods.adjustQuantity = async function(newQuantityIn, reason = '') {
-  const previousQuantityIn = this.quantityIn;
-  const difference = newQuantityIn - previousQuantityIn;
-  
-  this.quantityIn = newQuantityIn;
-  this.quantityRemaining += difference;
-  
-  // Add note about adjustment
-  if (reason) {
-    this.notes = this.notes ? `${this.notes}\nAdjustment: ${reason}` : `Adjustment: ${reason}`;
+inventoryBatchSchema.methods.adjustQuantity = async function(newQuantityIn, reason = '', size = null, color = null) {
+  // If batch has variants and size/color specified
+  if (this.hasVariants && size && color) {
+    const variant = this.variants.find(v => v.size === size && v.color === color);
+    
+    if (!variant) {
+      throw new Error(`Variant ${color} - ${size} not found in this batch`);
+    }
+    
+    const previousQuantityIn = variant.quantityIn;
+    const difference = newQuantityIn - previousQuantityIn;
+    
+    variant.quantityIn = newQuantityIn;
+    variant.quantityRemaining += difference;
+    
+    // Add note about adjustment
+    if (reason) {
+      this.notes = this.notes 
+        ? `${this.notes}\nAdjustment ${color}-${size}: ${reason}` 
+        : `Adjustment ${color}-${size}: ${reason}`;
+    }
+  } else {
+    const previousQuantityIn = this.quantityIn;
+    const difference = newQuantityIn - previousQuantityIn;
+    
+    this.quantityIn = newQuantityIn;
+    this.quantityRemaining += difference;
+    
+    // Add note about adjustment
+    if (reason) {
+      this.notes = this.notes 
+        ? `${this.notes}\nAdjustment: ${reason}` 
+        : `Adjustment: ${reason}`;
+    }
   }
   
   return await this.save();
+};
+
+// Method to get specific variant from batch
+inventoryBatchSchema.methods.getVariant = function(size, color) {
+  if (!this.hasVariants || !this.variants) return null;
+  return this.variants.find(v => v.size === size && v.color === color);
+};
+
+// Method to check variant availability in batch
+inventoryBatchSchema.methods.isVariantAvailable = function(size, color, quantity = 1) {
+  const variant = this.getVariant(size, color);
+  return variant && variant.quantityRemaining >= quantity;
 };
 
 // Indexes
@@ -424,6 +627,7 @@ inventoryBatchSchema.index({ productId: 1, dateReceived: -1 });
 inventoryBatchSchema.index({ batchCode: 1 }, { unique: true });
 inventoryBatchSchema.index({ expiryDate: 1 });
 inventoryBatchSchema.index({ status: 1, quantityRemaining: 1 });
+inventoryBatchSchema.index({ 'variants.size': 1, 'variants.color': 1 });
 
 const InventoryBatch = mongoose.models.InventoryBatch || mongoose.model('InventoryBatch', inventoryBatchSchema);
 

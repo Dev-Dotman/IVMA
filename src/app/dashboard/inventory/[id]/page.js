@@ -8,12 +8,11 @@ import { AlertTriangle } from "lucide-react";
 // Import modular components
 import InventoryDetailsHeader from "@/components/dashboard/Inventory/InventoryDetailsHeader";
 import InventoryProductOverview from "@/components/dashboard/Inventory/InventoryProductOverview";
-import InventorySalesAnalytics from "@/components/dashboard/Inventory/InventorySalesAnalytics";
 import InventoryAdditionalInfo from "@/components/dashboard/Inventory/InventoryAdditionalInfo";
 import InventoryQuickActions from "@/components/dashboard/Inventory/InventoryQuickActions";
 import InventoryBatchStatus from "@/components/dashboard/Inventory/InventoryBatchStatus";
 import InventoryStockAlert from "@/components/dashboard/Inventory/InventoryStockAlert";
-import InventoryPricingAnalysis from "@/components/dashboard/Inventory/InventoryPricingAnalysis";
+import InventoryVariantsSection from "@/components/dashboard/Inventory/InventoryVariantsSection";
 
 // Import existing modals
 import EditInventoryModal from "@/components/dashboard/EditInventoryModal";
@@ -397,15 +396,11 @@ export default function InventoryDetailPage() {
             onEdit={() => setIsEditModalOpen(true)}
           />
 
-          <InventorySalesAnalytics
-            item={item}
-            enhancedMetrics={enhancedMetrics}
-            batchPricing={batchPricing}
-            allBatches={allBatches}
-            formatCurrency={formatCurrency}
-          />
-
           <InventoryAdditionalInfo item={item} />
+
+          
+
+          
         </div>
 
         {/* Sidebar */}
@@ -415,6 +410,7 @@ export default function InventoryDetailPage() {
             onAddBatch={() => setIsAddBatchModalOpen(true)}
             onUpdateStock={() => setIsStockModalOpen(true)}
             onViewActivity={() => setIsActivityPanelOpen(true)}
+            onViewAnalytics={() => router.push(`/dashboard/analytics?item=${item._id}`)}
           />
 
           <InventoryBatchStatus
@@ -429,14 +425,13 @@ export default function InventoryDetailPage() {
         </div>
       </div>
 
-      <InventoryPricingAnalysis
-        item={item}
-        currentBatch={currentBatch}
-        batchPricing={batchPricing}
-        enhancedMetrics={enhancedMetrics}
-        formatCurrency={formatCurrency}
-      />
-
+{/* Variants Section - Show if item has variants */}
+          {item.hasVariants && item.variants && item.variants.length > 0 && (
+            <InventoryVariantsSection
+              item={item}
+              formatCurrency={formatCurrency}
+            />
+          )}
       {/* Modals */}
       <EditInventoryModal
         isOpen={isEditModalOpen}

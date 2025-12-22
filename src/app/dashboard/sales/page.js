@@ -457,8 +457,23 @@ export default function SalesPage() {
                         {sale.items.length} item{sale.items.length !== 1 ? 's' : ''}
                       </div>
                       <div className="text-xs text-gray-500">
-                        {sale.items.slice(0, 2).map(item => item.productName).join(', ')}
-                        {sale.items.length > 2 && ` +${sale.items.length - 2} more`}
+                        {sale.items.slice(0, 2).map((item, idx) => {
+                          // Check if item has variant information
+                          if (item.variant && item.variant.hasVariant && item.variant.size && item.variant.color) {
+                            return (
+                              <div key={idx} className="mb-1">
+                                <span className="font-medium">{item.productName}</span>
+                                <span className="text-teal-600 ml-1">
+                                  ({item.variant.color} - {item.variant.size})
+                                </span>
+                              </div>
+                            );
+                          }
+                          return <div key={idx} className="mb-1">{item.productName}</div>;
+                        })}
+                        {sale.items.length > 2 && (
+                          <span className="text-gray-400"> +{sale.items.length - 2} more</span>
+                        )}
                       </div>
                     </td>
                     <td className="px-6 py-4">

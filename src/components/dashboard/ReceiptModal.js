@@ -29,6 +29,10 @@ export default function ReceiptModal({ isOpen, onClose, sale }) {
 
   if (!isOpen || !sale) return null;
 
+  // Add safety check for sale.items
+  const saleItems = sale.items || [];
+  const hasItems = saleItems.length > 0;
+
   // Format currency
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-NG', {
@@ -594,29 +598,50 @@ export default function ReceiptModal({ isOpen, onClose, sale }) {
             <p className="text-sm text-gray-600">{formatDate(sale.saleDate)}</p>
           </div>
 
-          {(sale.customer.name || sale.customer.phone) && (
+          {/* Customer Information - Add safety check */}
+          {sale.customer && (sale.customer.name || sale.customer.phone) && (
             <div className="mb-4 p-3 bg-gray-50 rounded-lg">
               <h5 className="text-sm font-medium text-gray-900 mb-2">Customer Information</h5>
               {sale.customer.name && (
-                <p className="text-sm text-gray-600">Name: {sale.customer.name}</p>
+                <p className="text-sm text-gray-600">
+                  <strong>Name:</strong> {sale.customer.name}
+                </p>
               )}
               {sale.customer.phone && (
-                <p className="text-sm text-gray-600">Phone: {sale.customer.phone}</p>
+                <p className="text-sm text-gray-600">
+                  <strong>Phone:</strong> {sale.customer.phone}
+                </p>
+              )}
+              {sale.customer.email && (
+                <p className="text-sm text-gray-600">
+                  <strong>Email:</strong> {sale.customer.email}
+                </p>
               )}
             </div>
           )}
 
-          <div className="mb-4">
-            <h5 className="text-sm font-medium text-gray-900 mb-3">Items Purchased</h5>
-            <div className="space-y-2">
-              {sale.items.map((item, index) => (
-                <div key={index} className="flex justify-between text-sm">
-                  <span className="text-gray-600">{item.productName} x{item.quantity}</span>
-                  <span className="text-gray-900 font-medium">{formatCurrency(item.total)}</span>
-                </div>
-              ))}
+          {/* Items Purchased */}
+          {hasItems && (
+            <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+              <h5 className="text-sm font-medium text-gray-900 mb-3">Items Purchased</h5>
+              <div className="space-y-2">
+                {saleItems.map((item, index) => (
+                  <div key={index} className="flex justify-between text-sm">
+                    <div className="flex-1">
+                      <span className="text-gray-600">{item.productName} x{item.quantity}</span>
+                      {/* Variant Information */}
+                      {item.variant && item.variant.hasVariant && item.variant.size && item.variant.color && (
+                        <span className="text-teal-600 text-xs ml-1">
+                          ({item.variant.color} - {item.variant.size})
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-gray-900 font-medium">{formatCurrency(item.total)}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="border-t border-gray-200 pt-4">
             <div className="space-y-2">
@@ -652,6 +677,151 @@ export default function ReceiptModal({ isOpen, onClose, sale }) {
               )}
             </div>
           </div>
+
+          {/* Items List */}
+          {/* <div className="border-t border-b border-gray-200 py-4">
+            <table className="w-full">
+              <thead>
+                <tr className="text-left text-xs text-gray-600">
+                  <th className="pb-2">Item</th>
+                  <th className="pb-2 text-center">Qty</th>
+                  <th className="pb-2 text-right">Price</th>
+                  <th className="pb-2 text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody className="text-sm">
+                {sale.items.map((item, index) => (
+                  <tr key={index} className="border-t border-gray-100">
+                    <td className="py-2">
+                      <div>
+                        <div className="font-medium text-gray-900">{item.productName}</div>
+                        
+                        {item.variant && item.variant.hasVariant && (
+                          <div className="text-xs text-teal-600 mt-0.5">
+                            {item.variant.color} - {item.variant.size}
+                            {item.variant.variantSku && (
+                              <span className="text-gray-500 ml-1">
+                                (SKU: {item.variant.variantSku})
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        
+                        {item.categoryDetails && item.categoryDetails.category && (
+                          <div className="text-xs text-gray-500 mt-0.5">
+                            {item.categoryDetails.category}
+                          </div>
+                        )}
+                        <div className="text-xs text-gray-500">SKU: {item.sku}</div>
+                      </div>
+                    </td>
+                    <td className="py-2 text-center text-gray-900">{item.quantity}</td>
+                    <td className="py-2 text-right text-gray-900">{formatCurrency(item.unitPrice)}</td>
+                    <td className="py-2 text-right font-medium text-gray-900">{formatCurrency(item.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          
+          {sale.items.some(item => item.batchesSoldFrom && item.batchesSoldFrom.length > 0) && (
+            <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <h4 className="text-sm font-semibold text-blue-900 mb-2">Batch Information</h4>
+              <div className="space-y-2">
+                {sale.items
+                  .filter(item => item.batchesSoldFrom && item.batchesSoldFrom.length > 0)
+                  .map((item, itemIndex) => (
+                    <div key={itemIndex} className="text-xs">
+                      <div className="font-medium text-blue-900">
+                        {item.productName}
+                        {item.variant && item.variant.hasVariant && (
+                          <span className="text-teal-600 ml-1">
+                            ({item.variant.color} - {item.variant.size})
+                          </span>
+                        )}
+                      </div>
+                      {item.batchesSoldFrom.map((batch, batchIndex) => (
+                        <div key={batchIndex} className="ml-2 text-blue-700">
+                          • Batch {batch.batchCode}: {batch.quantityFromBatch} units
+                          {batch.batchVariant && batch.batchVariant.size && batch.batchVariant.color && (
+                            <span className="text-teal-600 ml-1">
+                              [{batch.batchVariant.color} - {batch.batchVariant.size}]
+                            </span>
+                          )}
+                          {' '}@ {formatCurrency(batch.costPriceFromBatch)} each
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {sale.items.some(item => item.categoryDetails && Object.keys(item.categoryDetails).length > 1) && (
+            <div className="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+              <h4 className="text-sm font-semibold text-gray-900 mb-2">Product Details</h4>
+              <div className="space-y-3">
+                {sale.items
+                  .filter(item => item.categoryDetails && Object.keys(item.categoryDetails).length > 1)
+                  .map((item, itemIndex) => (
+                    <div key={itemIndex} className="text-xs">
+                      <div className="font-medium text-gray-900 mb-1">
+                        {item.productName}
+                        {item.variant && item.variant.hasVariant && (
+                          <span className="text-teal-600 ml-1">
+                            ({item.variant.color} - {item.variant.size})
+                          </span>
+                        )}
+                      </div>
+                      <div className="ml-2 space-y-0.5 text-gray-600">
+                        {item.categoryDetails.clothingDetails && (
+                          <>
+                            <div>Material: {item.categoryDetails.clothingDetails.material}</div>
+                            {item.categoryDetails.clothingDetails.gender && (
+                              <div>Gender: {item.categoryDetails.clothingDetails.gender}</div>
+                            )}
+                          </>
+                        )}
+                       
+                        {item.categoryDetails.foodDetails && (
+                          <>
+                            {item.categoryDetails.foodDetails.foodType && (
+                              <div>Type: {item.categoryDetails.foodDetails.foodType}</div>
+                            )}
+                            {item.categoryDetails.foodDetails.spiceLevel && (
+                              <div>Spice Level: {item.categoryDetails.foodDetails.spiceLevel}</div>
+                            )}
+                          </>
+                        )}
+                        
+                        {item.categoryDetails.electronicsDetails && (
+                          <>
+                            {item.categoryDetails.electronicsDetails.brand && (
+                              <div>Brand: {item.categoryDetails.electronicsDetails.brand}</div>
+                            )}
+                            {item.categoryDetails.electronicsDetails.model && (
+                              <div>Model: {item.categoryDetails.electronicsDetails.model}</div>
+                            )}
+                          </>
+                        )}
+                        
+                        {item.categoryDetails.perfumeDetails && (
+                          <>
+                            {item.categoryDetails.perfumeDetails.volume && (
+                              <div>Volume: {item.categoryDetails.perfumeDetails.volume}</div>
+                            )}
+                            {item.categoryDetails.perfumeDetails.scentFamily && (
+                              <div>Scent: {item.categoryDetails.perfumeDetails.scentFamily}</div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )} */}
 
           {/* IVMA Branding */}
           <div className="text-center mt-6 pt-4 border-t border-gray-200">

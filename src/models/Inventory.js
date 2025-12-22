@@ -1,6 +1,50 @@
 import mongoose from 'mongoose';
 
-// Category-specific schemas
+// Add before the main inventorySchema
+const InventoryVariantSchema = new mongoose.Schema({
+  size: {
+    type: String,
+    required: [true, 'Variant size is required'],
+    trim: true
+  },
+  color: {
+    type: String,
+    required: [true, 'Variant color is required'],
+    trim: true
+  },
+  sku: {
+    type: String,
+    trim: true // Variant-specific SKU like "CLO-001-RED-M"
+  },
+  quantityInStock: {
+    type: Number,
+    required: [true, 'Variant quantity is required'],
+    min: [0, 'Variant quantity cannot be negative'],
+    default: 0
+  },
+  reorderLevel: {
+    type: Number,
+    min: [0, 'Reorder level cannot be negative'],
+    default: 5
+  },
+  soldQuantity: {
+    type: Number,
+    min: [0, 'Sold quantity cannot be negative'],
+    default: 0
+  },
+  images: [{
+    type: String // URLs for variant-specific images (tagged with this color)
+  }],
+  barcode: {
+    type: String,
+    trim: true
+  },
+  isActive: {
+    type: Boolean,
+    default: true
+  }
+}, { _id: true });
+
 const ClothingDetailsSchema = new mongoose.Schema({
   gender: {
     type: String,
@@ -20,7 +64,7 @@ const ClothingDetailsSchema = new mongoose.Schema({
   },
   sizes: [{
     type: String,
-    enum: ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'Plus Size', 'Kids 2-4', 'Kids 5-7', 'Kids 8-12', 'Custom']
+    enum: ['One Size', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'Plus Size', 'Kids 2-4', 'Kids 5-7', 'Kids 8-12', 'Custom']
   }],
   colors: [{
     type: String,
@@ -61,7 +105,7 @@ const ShoesDetailsSchema = new mongoose.Schema({
     ]
   },
   sizes: [{
-    type: String // e.g., '38', '39', '40', 'UK 7', 'US 9'
+    type: String // e.g., 'One Size', '38', '39', '40', 'UK 7', 'US 9'
   }],
   colors: [{
     type: String,
@@ -370,7 +414,10 @@ const HomeGardenDetailsSchema = new mongoose.Schema({
     height: String,
     weight: String
   },
-  color: [String],
+  color: [{
+    type: String,
+    trim: true
+  }],
   assemblyRequired: {
     type: Boolean,
     default: false
@@ -572,6 +619,36 @@ const inventorySchema = new mongoose.Schema({
     trim: true,
     default: ''
   },
+  // Add variant tracking
+  hasVariants: {
+    type: Boolean,
+    default: false
+  },
+  variants: [InventoryVariantSchema],
+  
+  // Main images array (for all product images with color tagging)
+  images: [{
+    url: {
+      type: String,
+      required: true
+    },
+    colorTag: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    isPrimary: {
+      type: Boolean,
+      default: false
+    },
+    altText: {
+      type: String,
+      trim: true,
+      default: ''
+    }
+  }],
+  
+  // Keep existing image field for backward compatibility
   image: {
     type: String,
     default: null
@@ -702,6 +779,26 @@ inventorySchema.virtual('remainingQuantityPercentage').get(function() {
   return (this.quantityInStock / this.totalStockedQuantity) * 100;
 });
 
+// Add virtual for total stock across all variants
+inventorySchema.virtual('totalVariantStock').get(function() {
+  if (!this.hasVariants || !this.variants || this.variants.length === 0) {
+    return this.quantityInStock;
+  }
+  return this.variants.reduce((sum, variant) => sum + (variant.quantityInStock || 0), 0);
+});
+
+// Add virtual for low stock variants
+inventorySchema.virtual('lowStockVariants').get(function() {
+  if (!this.hasVariants || !this.variants) return [];
+  return this.variants.filter(v => v.quantityInStock <= v.reorderLevel && v.isActive);
+});
+
+// Add virtual for out of stock variants
+inventorySchema.virtual('outOfStockVariants').get(function() {
+  if (!this.hasVariants || !this.variants) return [];
+  return this.variants.filter(v => v.quantityInStock === 0 && v.isActive);
+});
+
 // Pre-save middleware
 inventorySchema.pre('save', function(next) {
   this.lastUpdated = new Date();
@@ -813,6 +910,98 @@ inventorySchema.methods.adjustPrices = async function(costPrice, sellingPrice) {
   if (sellingPrice !== undefined) this.sellingPrice = sellingPrice;
   this.lastUpdated = new Date();
   return await this.save();
+};
+
+// Pre-save middleware to sync variant stock with main quantityInStock
+inventorySchema.pre('save', function(next) {
+  if (this.hasVariants && this.variants && this.variants.length > 0) {
+    // Calculate total stock from all active variants
+    const totalVariantStock = this.variants
+      .filter(v => v.isActive)
+      .reduce((sum, v) => sum + (v.quantityInStock || 0), 0);
+    
+    // Update main quantityInStock to match total variant stock
+    this.quantityInStock = totalVariantStock;
+    
+    // Calculate total sold from variants
+    const totalVariantSold = this.variants
+      .filter(v => v.isActive)
+      .reduce((sum, v) => sum + (v.soldQuantity || 0), 0);
+    
+    // Update main soldQuantity if variants exist
+    if (totalVariantSold > 0) {
+      this.soldQuantity = totalVariantSold;
+    }
+  }
+  
+  next();
+});
+
+// Method to get variant by size and color
+inventorySchema.methods.getVariant = function(size, color) {
+  if (!this.hasVariants || !this.variants) return null;
+  return this.variants.find(v => 
+    v.size === size && 
+    v.color === color && 
+    v.isActive
+  );
+};
+
+// Method to check variant availability
+inventorySchema.methods.isVariantAvailable = function(size, color, quantity = 1) {
+  const variant = this.getVariant(size, color);
+  return variant && variant.quantityInStock >= quantity;
+};
+
+// Method to update variant stock
+inventorySchema.methods.updateVariantStock = async function(size, color, quantity, operation = 'set') {
+  const variant = this.getVariant(size, color);
+  if (!variant) {
+    throw new Error('Variant not found');
+  }
+  
+  if (operation === 'add') {
+    variant.quantityInStock += quantity;
+  } else if (operation === 'subtract') {
+    if (variant.quantityInStock < quantity) {
+      throw new Error('Insufficient stock');
+    }
+    variant.quantityInStock -= quantity;
+  } else {
+    variant.quantityInStock = quantity;
+  }
+  
+  return await this.save();
+};
+
+// Method to record variant sale
+inventorySchema.methods.recordVariantSale = async function(size, color, quantity) {
+  const variant = this.getVariant(size, color);
+  if (!variant) {
+    throw new Error('Variant not found');
+  }
+  
+  if (variant.quantityInStock < quantity) {
+    throw new Error('Insufficient stock for this variant');
+  }
+  
+  variant.quantityInStock -= quantity;
+  variant.soldQuantity += quantity;
+  
+  return await this.save();
+};
+
+// Method to get images for specific color
+inventorySchema.methods.getImagesByColor = function(color) {
+  if (!this.images || this.images.length === 0) return [];
+  return this.images.filter(img => img.colorTag === color);
+};
+
+// Method to get primary image
+inventorySchema.methods.getPrimaryImage = function() {
+  if (!this.images || this.images.length === 0) return this.image;
+  const primaryImage = this.images.find(img => img.isPrimary);
+  return primaryImage ? primaryImage.url : this.images[0].url;
 };
 
 // Static methods

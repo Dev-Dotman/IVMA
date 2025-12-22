@@ -97,10 +97,14 @@ export function usePOSData() {
   // Update order status mutation
   const updateOrderStatusMutation = useMutation({
     mutationFn: async ({ orderId, statusData }) => {
+      console.log('Mutation called with:', { orderId, statusData });
+      
       const response = await secureApiCall(`/api/orders/${orderId}/status`, {
         method: 'PUT',
         body: JSON.stringify(statusData)
       });
+      
+      console.log('Order status update response:', response);
       
       if (!response.success) {
         throw new Error(response.message || 'Failed to update order status');
@@ -108,7 +112,8 @@ export function usePOSData() {
       
       return response;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      console.log('Order status updated successfully:', data);
       // Invalidate orders data
       queryClient.invalidateQueries({ queryKey: ['pending-orders'] });
       queryClient.invalidateQueries({ queryKey: ['orders'] });

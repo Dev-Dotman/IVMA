@@ -4,6 +4,7 @@ import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import ReceiptModal from "@/components/dashboard/ReceiptModal";
 import CreateStoreModal from "@/components/dashboard/CreateStoreModal";
 import DeliveryScheduleModal from "@/components/dashboard/DeliveryScheduleModal";
+import VariantSelectionModal from "@/components/dashboard/VariantSelectionModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import useOrderProcessingStore from "@/store/orderProcessingStore";
@@ -73,6 +74,8 @@ export default function POSPage() {
   const [isDeliveryPromptOpen, setIsDeliveryPromptOpen] = useState(false);
   const [isDeliveryModalOpen, setIsDeliveryModalOpen] = useState(false);
   const [pendingSaleForDelivery, setPendingSaleForDelivery] = useState(null);
+  const [isVariantModalOpen, setIsVariantModalOpen] = useState(false);
+  const [selectedItemForVariant, setSelectedItemForVariant] = useState(null);
 
   // Show create store modal if no store
   useEffect(() => {
@@ -114,12 +117,23 @@ export default function POSPage() {
 
   // Add item to cart
   const addToCart = (item) => {
-    const existingItem = cart.find(cartItem => cartItem._id === item._id);
+    // Check if item has variants
+    if (item.hasVariants && item.variants && item.variants.length > 0) {
+      // Open variant selection modal
+      setSelectedItemForVariant(item);
+      setIsVariantModalOpen(true);
+      return;
+    }
+
+    // Regular non-variant item
+    const existingItem = cart.find(cartItem => 
+      cartItem._id === item._id && !cartItem.variant
+    );
     
     if (existingItem) {
       if (existingItem.quantity < item.quantityInStock) {
         setCart(cart.map(cartItem =>
-          cartItem._id === item._id
+          cartItem._id === item._id && !cartItem.variant
             ? { ...cartItem, quantity: cartItem.quantity + 1 }
             : cartItem
         ));
@@ -129,26 +143,66 @@ export default function POSPage() {
     }
   };
 
-  // Update cart item quantity
-  const updateCartQuantity = (itemId, newQuantity) => {
+  // Handle adding variant item to cart
+  const handleAddVariantToCart = (variantCartItem) => {
+    // Check if this exact variant is already in cart
+    const existingItem = cart.find(cartItem => 
+      cartItem._id === variantCartItem._id && 
+      cartItem.variant?.variantId === variantCartItem.variant.variantId
+    );
+    
+    if (existingItem) {
+      // Update quantity if variant already in cart
+      const newQuantity = existingItem.quantity + variantCartItem.quantity;
+      if (newQuantity <= variantCartItem.availableStock) {
+        setCart(cart.map(cartItem =>
+          cartItem._id === variantCartItem._id && 
+          cartItem.variant?.variantId === variantCartItem.variant.variantId
+            ? { ...cartItem, quantity: newQuantity }
+            : cartItem
+        ));
+      } else {
+        alert(`Only ${variantCartItem.availableStock} units available for this variant`);
+      }
+    } else {
+      // Add new variant to cart
+      setCart([...cart, variantCartItem]);
+    }
+  };
+
+  // Update cart item quantity - modified to handle variants
+  const updateCartQuantity = (itemId, newQuantity, variantId = null) => {
     if (newQuantity <= 0) {
-      removeFromCart(itemId);
+      removeFromCart(itemId, variantId);
       return;
     }
 
-    const item = inventoryItems.find(item => item._id === itemId);
-    if (newQuantity > item.quantityInStock) return;
-
-    setCart(cart.map(cartItem =>
-      cartItem._id === itemId
-        ? { ...cartItem, quantity: newQuantity }
-        : cartItem
-    ));
+    setCart(cart.map(cartItem => {
+      // Match by itemId and variantId (if applicable)
+      const isMatch = variantId 
+        ? (cartItem._id === itemId && cartItem.variant?.variantId === variantId)
+        : (cartItem._id === itemId && !cartItem.variant);
+      
+      if (isMatch) {
+        const maxStock = cartItem.variant ? cartItem.availableStock : cartItem.quantityInStock;
+        if (newQuantity > maxStock) {
+          alert(`Only ${maxStock} units available`);
+          return cartItem;
+        }
+        return { ...cartItem, quantity: newQuantity };
+      }
+      return cartItem;
+    }));
   };
 
-  // Remove item from cart
-  const removeFromCart = (itemId) => {
-    setCart(cart.filter(item => item._id !== itemId));
+  // Remove item from cart - modified to handle variants
+  const removeFromCart = (itemId, variantId = null) => {
+    setCart(cart.filter(item => {
+      if (variantId) {
+        return !(item._id === itemId && item.variant?.variantId === variantId);
+      }
+      return !(item._id === itemId && !item.variant);
+    }));
   };
 
   // Clear cart
@@ -204,77 +258,118 @@ export default function POSPage() {
     setIsReceiptModalOpen(true);
   };
 
-  // Process sale
+  // Process sale - modified to handle order processing with variants
   const processSale = async () => {
-    if (!isProcessingOrder) {
-      // Regular POS sale
-      if (cart.length === 0) {
-        alert('Please add items to cart before completing sale');
-        return;
-      }
-      
-      if (paymentMethod === 'cash' && parseFloat(amountReceived || 0) < total) {
-        alert('Amount received is less than total amount');
-        return;
-      }
+    // If processing an order, use the dedicated order completion function
+    if (isProcessingOrder) {
+      return await completeOrderSale();
+    }
 
-      try {
-        const calculatedSubtotal = cart.reduce((sum, item) => sum + (Number(item.sellingPrice) * Number(item.quantity)), 0);
-        const calculatedDiscountAmount = (calculatedSubtotal * Number(discount)) / 100;
-        const calculatedTaxAmount = ((calculatedSubtotal - calculatedDiscountAmount) * Number(tax)) / 100;
-        const calculatedTotal = calculatedSubtotal - calculatedDiscountAmount + calculatedTaxAmount;
-        const calculatedBalance = paymentMethod === 'cash' ? (Number(amountReceived) - calculatedTotal) : 0;
+    // Regular POS sale flow
+    if (cart.length === 0) {
+      alert('Cart is empty');
+      return;
+    }
 
-        const saleData = {
-          items: cart.map(item => ({
-            inventoryId: item._id,
-            productName: item.productName,
-            sku: item.sku,
-            quantity: Number(item.quantity),
-            unitPrice: Number(item.sellingPrice),
-            total: Number(item.sellingPrice) * Number(item.quantity)
-          })),
-          customer: customer || { name: '', phone: '', email: '' },
-          subtotal: calculatedSubtotal,
-          discount: calculatedDiscountAmount,
-          tax: calculatedTaxAmount,
-          total: calculatedTotal,
-          paymentMethod: paymentMethod,
-          amountReceived: Number(amountReceived) || calculatedTotal,
-          balance: calculatedBalance,
-          saleDate: new Date().toISOString(),
-          soldBy: null,
-          isFromOrder: false,
-          isOrderProcessing: false
+    const saleTotal = total;
+    const amountPaid = parseFloat(amountReceived || 0);
+
+    // Only validate amount for cash payments in regular POS sales
+    if (paymentMethod === 'cash' && amountPaid < saleTotal) {
+      alert(`Insufficient payment. Total is ${formatCurrency(saleTotal)}`);
+      return;
+    }
+
+    try {
+      // Prepare sale items with variant information
+      const saleItems = cart.map(item => {
+        const saleItem = {
+          inventoryId: item._id,
+          productName: item.productName,
+          sku: item.sku,
+          quantity: item.quantity,
+          unitPrice: item.sellingPrice,
+          total: item.sellingPrice * item.quantity
         };
 
-        const response = await processSaleMutation(saleData);
-
-        if (response.success) {
-          const completedSaleData = {
-            ...saleData,
-            _id: response.data._id,
-            transactionId: response.data.transactionId,
-            saleDate: response.data.saleDate || new Date().toISOString(),
-            status: response.data.status || 'completed'
+        // Include variant information if present
+        if (item.variant && item.variant.size && item.variant.color) {
+          saleItem.variant = {
+            hasVariant: true,
+            size: item.variant.size,
+            color: item.variant.color,
+            variantSku: item.variant.variantSku || item.variant.sku,
+            variantId: item.variant.variantId
           };
-          
-          setCompletedSale(completedSaleData);
-          setPendingSaleForDelivery(completedSaleData);
-          clearCart();
-          setIsDeliveryPromptOpen(true);
         }
-      } catch (error) {
-        console.error('Error processing sale:', error);
-        alert('Error processing sale: ' + error.message);
+
+        return saleItem;
+      });
+
+      // For transfer and POS payments, amount received equals total
+      // For cash, use the entered amount
+      const finalAmountReceived = paymentMethod === 'cash' ? amountPaid : saleTotal;
+      const finalBalance = paymentMethod === 'cash' ? balance : 0;
+
+      const saleData = {
+        items: saleItems,
+        customer: {
+          name: customer.name || 'Walk-in Customer',
+          phone: customer.phone || '',
+          email: customer.email || ''
+        },
+        subtotal: subtotal,
+        discount: discountAmount,
+        tax: taxAmount,
+        total: saleTotal,
+        paymentMethod: paymentMethod,
+        amountReceived: finalAmountReceived,
+        balance: finalBalance,
+        isOrderProcessing: false,
+        isFromOrder: false
+      };
+
+      console.log('Processing sale with data:', saleData);
+
+      // Call the function directly
+      const result = await processSaleMutation(saleData);
+
+      if (result.success) {
+        // Ensure the completed sale has all the data including items with variants
+        const completedSaleData = {
+          ...saleData,
+          _id: result.data._id,
+          transactionId: result.data.transactionId,
+          saleDate: result.data.saleDate || new Date().toISOString(),
+          status: result.data.status || 'completed',
+          items: saleItems // Ensure items with variant info are included
+        };
+        
+        setCompletedSale(completedSaleData);
+        
+        // Clear cart and reset form
+        clearCart();
+        setCustomer({ name: '', phone: '' });
+        setPaymentMethod('cash');
+        setAmountReceived('');
+        setDiscount(0);
+        setTax(0);
+
+        // Show receipt modal
+        setIsReceiptModalOpen(true);
+
+        // Refetch inventory to update stock
+        refetchInventory();
+      } else {
+        throw new Error(result.message || 'Failed to process sale');
       }
-    } else {
-      // Processing an order - call the order completion handler
-      return completeOrderSale();
+    } catch (error) {
+      console.error('Sale processing error:', error);
+      alert(error.message || 'Failed to process sale');
     }
   };
 
-  // Handle order processing completion
+  // Handle order processing completion - Updated to support variants
   const completeOrderSale = async () => {
     // Processing an order
     if (cart.length === 0) {
@@ -282,10 +377,7 @@ export default function POSPage() {
       return;
     }
     
-    if (paymentMethod === 'cash' && parseFloat(amountReceived || 0) < total) {
-      alert('Amount received is less than total amount');
-      return;
-    }
+    // NO payment validation needed for order processing - payment already handled in order!
 
     try {
       // Ensure all values are properly calculated and formatted
@@ -293,25 +385,42 @@ export default function POSPage() {
       const calculatedDiscountAmount = (calculatedSubtotal * Number(discount)) / 100;
       const calculatedTaxAmount = ((calculatedSubtotal - calculatedDiscountAmount) * Number(tax)) / 100;
       const calculatedTotal = calculatedSubtotal - calculatedDiscountAmount + calculatedTaxAmount;
-      const calculatedBalance = paymentMethod === 'cash' ? (Number(amountReceived) - calculatedTotal) : 0;
+      const calculatedBalance = 0; // Always 0 for order processing
 
-      // First, create the sale with all required fields
-      const saleData = {
-        items: cart.map(item => ({
+      // Prepare sale items with variant information
+      const saleItems = cart.map(item => {
+        const saleItem = {
           inventoryId: item._id,
           productName: item.productName,
           sku: item.sku,
           quantity: Number(item.quantity),
           unitPrice: Number(item.sellingPrice),
           total: Number(item.sellingPrice) * Number(item.quantity)
-        })),
+        };
+
+        // Include variant information if present
+        if (item.variant && item.variant.size && item.variant.color) {
+          saleItem.variant = {
+            size: item.variant.size,
+            color: item.variant.color,
+            variantSku: item.variant.variantSku,
+            variantId: item.variant.variantId
+          };
+        }
+
+        return saleItem;
+      });
+
+      // Create the sale with all required fields including variants
+      const saleData = {
+        items: saleItems,
         customer: customer || { name: '', phone: '', email: '' },
         subtotal: calculatedSubtotal,
         discount: calculatedDiscountAmount,
         tax: calculatedTaxAmount,
         total: calculatedTotal,
         paymentMethod: paymentMethod,
-        amountReceived: Number(amountReceived) || calculatedTotal,
+        amountReceived: calculatedTotal, // Set to total for order processing
         balance: calculatedBalance,
         saleDate: new Date().toISOString(),
         soldBy: null,
@@ -321,19 +430,33 @@ export default function POSPage() {
         orderNumber: processingOrder.orderNumber
       };
 
+      console.log('Processing order sale with variants:', saleData);
+
       const saleResponse = await processSaleMutation(saleData);
 
       if (saleResponse.success) {
+        console.log('Sale created successfully, now updating order status...');
+        
+        // Update order status to processed
         const statusUpdateData = {
           status: 'processed',
           note: `Order processed through POS. Sale transaction: ${saleResponse.data.transactionId}`,
           updatedBy: 'admin'
         };
 
-        await updateOrderStatusMutation({
-          orderId: processingOrder._id,
-          statusData: statusUpdateData
-        });
+        console.log('Updating order with ID:', processingOrder._id, 'to status:', statusUpdateData);
+
+        try {
+          await updateOrderStatusMutation({
+            orderId: processingOrder._id,
+            statusData: statusUpdateData
+          });
+          
+          console.log('Order status updated successfully to processed');
+        } catch (statusError) {
+          console.error('Error updating order status:', statusError);
+          alert('Sale completed but failed to update order status. Please update manually.');
+        }
 
         const completedOrder = completeOrderProcessing();
         
@@ -350,6 +473,8 @@ export default function POSPage() {
         setPendingSaleForDelivery(completedSaleData);
         clearCart();
         setIsDeliveryPromptOpen(true);
+      } else {
+        throw new Error(saleResponse.message || 'Failed to create sale');
       }
     } catch (error) {
       console.error('Error processing order:', error);
@@ -366,11 +491,49 @@ export default function POSPage() {
 
   // Initialize POS with order data if processing an order
   useEffect(() => {
-    if (isProcessingOrder && orderCart.length > 0) {
-      setCart(orderCart);
+    if (isProcessingOrder && orderCart && orderCart.length > 0) {
+      console.log('Initializing POS with order:', {
+        orderCart,
+        orderCustomer,
+        processingOrder
+      });
+
+      // Set cart with variant information preserved
+      const cartWithVariants = orderCart.map(item => {
+        const cartItem = {
+          ...item,
+          quantity: item.quantity || 1
+        };
+
+        // If item has variant information, preserve it
+        if (item.variant && item.variant.size && item.variant.color) {
+          cartItem.variant = {
+            size: item.variant.size,
+            color: item.variant.color,
+            variantSku: item.variant.variantSku,
+            variantId: item.variant.variantId,
+            images: item.variant.images || []
+          };
+          
+          // Ensure display name includes variant info
+          cartItem.displayName = item.displayName || 
+            `${item.productName} (${item.variant.color} - ${item.variant.size})`;
+        }
+
+        return cartItem;
+      });
+
+      setCart(cartWithVariants);
+
+      // Set customer info
       if (orderCustomer) {
-        setCustomer(orderCustomer);
+        setCustomer({
+          name: orderCustomer.name || '',
+          phone: orderCustomer.phone || ''
+        });
       }
+
+      console.log('Cart initialized with variants:', cartWithVariants);
     }
   }, [isProcessingOrder, orderCart, orderCustomer]);
 
@@ -611,7 +774,7 @@ export default function POSPage() {
             </div>
           </div>
 
-          {/* Product Grid */}
+          {/* Product Grid - Modified to show variant badge */}
           <div className="bg-white rounded-2xl p-6 border border-gray-100">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Products</h3>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -621,6 +784,13 @@ export default function POSPage() {
                   className="border border-gray-200 rounded-xl p-4 hover:border-teal-500 hover:shadow-md transition-all cursor-pointer relative"
                   onClick={() => addToCart(item)}
                 >
+                  {/* Variant badge */}
+                  {item.hasVariants && item.variants && item.variants.length > 0 && (
+                    <div className="absolute top-2 left-2 bg-purple-100 text-purple-700 text-xs px-2 py-1 rounded-full font-medium">
+                      Variants
+                    </div>
+                  )}
+                  
                   {/* Batch indicator */}
                   {item.hasBatchPricing && (
                     <div className="absolute top-2 right-2 bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full font-medium">
@@ -642,8 +812,12 @@ export default function POSPage() {
                   <h4 className="font-medium text-gray-900 text-sm mb-1 truncate">{item.productName}</h4>
                   <p className="text-xs text-gray-500 mb-2">{item.sku}</p>
                   
-                  {/* Show batch code if available */}
-                  {item.batchPricing?.activeBatchCode && (
+                  {/* Show variant count if applicable */}
+                  {item.hasVariants && item.variants && item.variants.length > 0 ? (
+                    <p className="text-xs text-purple-600 mb-2">
+                      {item.variants.length} variants
+                    </p>
+                  ) : item.batchPricing?.activeBatchCode && (
                     <p className="text-xs text-green-600 mb-2">
                       {item.batchPricing.activeBatchCode}
                     </p>
@@ -654,7 +828,6 @@ export default function POSPage() {
                       <span className="text-sm font-bold text-teal-600">
                         {formatCurrency(item.sellingPrice)}
                       </span>
-                      {/* Show if price is from batch vs original */}
                       {item.hasBatchPricing && item.sellingPrice !== item.originalSellingPrice && (
                         <span className="text-xs text-gray-400 line-through">
                           {formatCurrency(item.originalSellingPrice)}
@@ -680,7 +853,7 @@ export default function POSPage() {
 
         {/* Cart and Checkout - Right Side */}
         <div className="space-y-6">
-          {/* Cart */}
+          {/* Cart - Modified to show variant info */}
           <div className="bg-white rounded-2xl p-6 border border-gray-100">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900 flex items-center">
@@ -698,42 +871,59 @@ export default function POSPage() {
             </div>
 
             <div className="space-y-3 max-h-64 overflow-y-auto">
-              {cart.map(item => (
-                <div key={item._id} className={`flex items-center justify-between p-3 rounded-lg ${
-                  item.isOrderItem ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'
-                }`}>
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-2">
-                      <h4 className="font-medium text-gray-900 text-sm">{item.productName}</h4>
-                      {item.isOrderItem && (
-                        <CheckCircle className="w-4 h-4 text-blue-600" title="From order" />
-                      )}
+              {cart.map((item, index) => {
+                // Create unique key for variant items
+                const itemKey = item.variant 
+                  ? `${item._id}-${item.variant.variantId}` 
+                  : item._id;
+                
+                return (
+                  <div key={itemKey} className={`flex items-center justify-between p-3 rounded-lg ${
+                    item.isOrderItem ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'
+                  }`}>
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-2">
+                        <h4 className="font-medium text-gray-900 text-sm">
+                          {item.displayName || item.productName}
+                        </h4>
+                        {item.isOrderItem && (
+                          <CheckCircle className="w-4 h-4 text-blue-600" title="From order" />
+                        )}
+                        {item.variant && (
+                          <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded-full">
+                            Variant
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        {formatCurrency(item.sellingPrice)} each
+                        {item.variant && ` • ${item.variant.color} - ${item.variant.size}`}
+                      </p>
                     </div>
-                    <p className="text-xs text-gray-500">{formatCurrency(item.sellingPrice)} each</p>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => updateCartQuantity(item._id, item.quantity - 1, item.variant?.variantId)}
+                        className="p-1 text-gray-500 hover:text-red-600"
+                      >
+                        <Minus className="w-4 h-4" />
+                      </button>
+                      <span className="w-8 text-center text-gray-900 font-medium">{item.quantity}</span>
+                      <button
+                        onClick={() => updateCartQuantity(item._id, item.quantity + 1, item.variant?.variantId)}
+                        className="p-1 text-gray-500 hover:text-teal-600"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => removeFromCart(item._id, item.variant?.variantId)}
+                        className="p-1 text-gray-500 hover:text-red-600 ml-2"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => updateCartQuantity(item._id, item.quantity - 1)}
-                      className="p-1 text-gray-500 hover:text-red-600"
-                    >
-                      <Minus className="w-4 h-4" />
-                    </button>
-                    <span className="w-8 text-center text-gray-900 font-medium">{item.quantity}</span>
-                    <button
-                      onClick={() => updateCartQuantity(item._id, item.quantity + 1)}
-                      className="p-1 text-gray-500 hover:text-teal-600"
-                    >
-                      <Plus className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => removeFromCart(item._id)}
-                      className="p-1 text-gray-500 hover:text-red-600 ml-2"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {cart.length === 0 && (
@@ -863,8 +1053,8 @@ export default function POSPage() {
               </div>
             </div>
 
-            {/* Amount Received */}
-            {paymentMethod === 'cash' && (
+            {/* Amount Received - Only show for cash */}
+            {paymentMethod === 'cash' && !isProcessingOrder && (
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Amount Received</label>
                 <input
@@ -899,7 +1089,7 @@ export default function POSPage() {
                 <span>Total:</span>
                 <span>{formatCurrency(total)}</span>
               </div>
-              {paymentMethod === 'cash' && amountReceived && (
+              {paymentMethod === 'cash' && amountReceived && !isProcessingOrder && (
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Change:</span>
                   <span className={`font-medium ${balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -912,7 +1102,11 @@ export default function POSPage() {
             {/* Process Sale Button */}
             <button
               onClick={processSale}
-              disabled={cart.length === 0 || isSaleProcessing || (paymentMethod === 'cash' && parseFloat(amountReceived || 0) < total)}
+              disabled={
+                cart.length === 0 || 
+                isSaleProcessing || 
+                (!isProcessingOrder && paymentMethod === 'cash' && parseFloat(amountReceived || 0) < total)
+              }
               className="w-full mt-4 bg-teal-600 text-white py-3 rounded-xl font-medium hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
             >
               {isSaleProcessing ? (
@@ -1009,6 +1203,17 @@ export default function POSPage() {
           setCompletedSale(null);
         }}
         sale={completedSale}
+      />
+
+      {/* Variant Selection Modal */}
+      <VariantSelectionModal
+        isOpen={isVariantModalOpen}
+        onClose={() => {
+          setIsVariantModalOpen(false);
+          setSelectedItemForVariant(null);
+        }}
+        item={selectedItemForVariant}
+        onAddToCart={handleAddVariantToCart}
       />
     </DashboardLayout>
   );

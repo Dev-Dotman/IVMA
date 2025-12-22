@@ -9,6 +9,7 @@ import {
   Truck, 
   Calendar,
   Phone,
+  Store,
   Mail,
   Edit,
   CheckCircle,
@@ -118,8 +119,28 @@ export default function OrderDetailsModal({
   const handleProcessOrder = () => {
     if (!order) return;
     
+    // Create order object with complete variant information
+    const orderWithVariants = {
+      ...order,
+      items: order.items.map(item => ({
+        ...item,
+        // Ensure variant information is included
+        variant: item.variant ? {
+          size: item.variant.size,
+          color: item.variant.color,
+          variantSku: item.variant.variantSku,
+          variantId: item.variant.variantId,
+          images: item.variant.images || []
+        } : null,
+        productSnapshot: {
+          ...item.productSnapshot,
+          hasVariants: item.productSnapshot.hasVariants || false
+        }
+      }))
+    };
+    
     // Set the order in the processing store
-    setProcessingOrder(order);
+    setProcessingOrder(orderWithVariants);
     
     // Close the modal
     onClose();
@@ -150,10 +171,27 @@ export default function OrderDetailsModal({
 
       await onStatusUpdate(order._id, statusUpdateData);
       
-      // Create updated order object for processing store
+      // Create updated order object with variant information for processing store
       const confirmedOrder = {
         ...order,
-        status: 'confirmed'
+        status: 'confirmed',
+        // Ensure variant information is properly included in items
+        items: order.items.map(item => ({
+          ...item,
+          // Include variant details if they exist
+          variant: item.variant ? {
+            size: item.variant.size,
+            color: item.variant.color,
+            variantSku: item.variant.variantSku,
+            variantId: item.variant.variantId,
+            images: item.variant.images || []
+          } : null,
+          // Also include product snapshot
+          productSnapshot: {
+            ...item.productSnapshot,
+            hasVariants: item.productSnapshot.hasVariants || false
+          }
+        }))
       };
       
       // Set the confirmed order in the processing store
@@ -322,32 +360,106 @@ export default function OrderDetailsModal({
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">Order Items</h3>
                   <div className="space-y-4">
                     {order.items.map((item, index) => (
-                      <div key={index} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
-                        <div className="flex items-center space-x-4">
-                          {item.productSnapshot.image ? (
-                            <img
-                              src={item.productSnapshot.image}
-                              alt={item.productSnapshot.productName}
-                              className="w-12 h-12 object-cover rounded-lg"
-                            />
-                          ) : (
-                            <div className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center">
-                              <Package className="w-6 h-6 text-gray-400" />
+                      <div key={index} className="flex items-start justify-between p-4 bg-gray-50 rounded-xl">
+                        <div className="flex items-start space-x-4 flex-1">
+                          {/* Product Image */}
+                          <div className="flex-shrink-0">
+                            {item.productSnapshot.image || (item.variant && item.variant.image) ? (
+                              <img
+                                src={item.variant && item.variant.image ? item.variant.image : item.productSnapshot.image}
+                                alt={item.productSnapshot.productName}
+                                className="w-16 h-16 object-cover rounded-lg"
+                              />
+                            ) : (
+                              <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center">
+                                <Package className="w-8 h-8 text-gray-400" />
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Product Info */}
+                          <div className="flex-1 min-w-0">
+                            <h4 className="text-sm font-medium text-gray-900 mb-1">
+                              {item.productSnapshot.productName}
+                            </h4>
+                            
+                            {/* Variant Information */}
+                            {item.variant && item.variant.size && item.variant.color && (
+                              <div className="flex items-center space-x-2 mb-2">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-teal-100 text-teal-800">
+                                  {item.variant.color} - {item.variant.size}
+                                </span>
+                                {item.variant.sku && (
+                                  <span className="text-xs text-gray-500">
+                                    Variant SKU: {item.variant.sku}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            
+                            {/* Product Details */}
+                            <div className="space-y-0.5">
+                              <p className="text-xs text-gray-500">
+                                SKU: {item.productSnapshot.sku} • Qty: {item.quantity}
+                              </p>
+                              {item.productSnapshot.category && (
+                                <p className="text-xs text-gray-500">
+                                  Category: {item.productSnapshot.category}
+                                </p>
+                              )}
+                              {item.productSnapshot.brand && (
+                                <p className="text-xs text-gray-500">
+                                  Brand: {item.productSnapshot.brand}
+                                </p>
+                              )}
                             </div>
-                          )}
-                          <div>
-                            <h4 className="text-sm font-medium text-gray-900">{item.productSnapshot.productName}</h4>
-                            <p className="text-xs text-gray-500">
-                              SKU: {item.productSnapshot.sku} • Qty: {item.quantity}
-                            </p>
-                            {item.productSnapshot.category && (
-                              <p className="text-xs text-gray-500">Category: {item.productSnapshot.category}</p>
+
+                            {/* Batch Information */}
+                            {item.batchCode && (
+                              <div className="mt-2 text-xs text-blue-600">
+                                From Batch: {item.batchCode}
+                              </div>
+                            )}
+
+                            {/* Store Information */}
+                            {item.storeSnapshot && (
+                              <div className="mt-2 p-2 bg-white rounded-lg border border-gray-200">
+                                <div className="flex items-center space-x-1.5 text-xs">
+                                  <Store className="w-3 h-3 text-gray-400" />
+                                  <span className="font-medium text-gray-700">
+                                    {item.storeSnapshot.storeName}
+                                  </span>
+                                </div>
+                                {item.storeSnapshot.storePhone && (
+                                  <div className="flex items-center space-x-1.5 text-xs text-gray-600 mt-1">
+                                    <Phone className="w-3 h-3 text-gray-400" />
+                                    <span>{item.storeSnapshot.storePhone}</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Item Status (if different from order status) */}
+                            {item.itemStatus && item.itemStatus !== order.status && (
+                              <div className="mt-2">
+                                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                  getStatusInfo(item.itemStatus).color
+                                }`}>
+                                  Item Status: {item.itemStatus.charAt(0).toUpperCase() + item.itemStatus.slice(1)}
+                                </span>
+                              </div>
                             )}
                           </div>
                         </div>
-                        <div className="text-right">
-                          <p className="text-sm font-medium text-gray-900">{formatCurrency(item.subtotal)}</p>
-                          <p className="text-xs text-gray-500">{formatCurrency(item.price)} each</p>
+
+                        {/* Price Info */}
+                        <div className="text-right ml-4 flex-shrink-0">
+                          <p className="text-sm font-medium text-gray-900 mb-1">
+                            {formatCurrency(item.subtotal)}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {formatCurrency(item.price)} each
+                          </p>
                         </div>
                       </div>
                     ))}

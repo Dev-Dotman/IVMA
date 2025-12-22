@@ -135,31 +135,74 @@ export async function POST(req) {
   }
 }
 
-// Helper function to process items with batch tracking
+// Helper function to process items with batch tracking and variant information
 async function processItemWithBatchTracking(saleItem, userId, session, isOrderProcessing = false) {
-  // Get the inventory item
+  // Get the inventory item with all details
   const inventoryItem = await Inventory.findById(saleItem.inventoryId).session(session);
   if (!inventoryItem) {
     throw new Error(`Inventory item not found: ${saleItem.inventoryId}`);
   }
 
-  // Only check stock availability for regular POS sales, not order processing
-  if (!isOrderProcessing) {
-    // Check if we have enough stock for regular POS sales
-    if (inventoryItem.quantityInStock < saleItem.quantity) {
+  // Extract variant information if present
+  let variantInfo = null;
+  let selectedVariant = null;
+  
+  if (saleItem.variant && saleItem.variant.size && saleItem.variant.color) {
+    // Find the specific variant
+    selectedVariant = inventoryItem.getVariant(saleItem.variant.size, saleItem.variant.color);
+    
+    if (!selectedVariant) {
+      throw new Error(`Variant ${saleItem.variant.color} - ${saleItem.variant.size} not found for ${inventoryItem.productName}`);
+    }
+    
+    // Only check stock for regular POS sales
+    if (!isOrderProcessing && selectedVariant.quantityInStock < saleItem.quantity) {
+      throw new Error(`Insufficient stock for variant ${saleItem.variant.color} - ${saleItem.variant.size}. Available: ${selectedVariant.quantityInStock}, Requested: ${saleItem.quantity}`);
+    }
+    
+    variantInfo = {
+      hasVariant: true,
+      size: saleItem.variant.size,
+      color: saleItem.variant.color,
+      variantSku: selectedVariant.sku,
+      variantId: selectedVariant._id,
+      images: selectedVariant.images || []
+    };
+  } else {
+    // Non-variant item - check main stock
+    if (!isOrderProcessing && inventoryItem.quantityInStock < saleItem.quantity) {
       throw new Error(`Insufficient stock for ${inventoryItem.productName}. Available: ${inventoryItem.quantityInStock}, Requested: ${saleItem.quantity}`);
     }
+    
+    variantInfo = {
+      hasVariant: false,
+      size: null,
+      color: null,
+      variantSku: null,
+      variantId: null,
+      images: []
+    };
   }
 
-  // Get available batches in FIFO order
-  const availableBatches = await InventoryBatch.find({
+  // Get available batches - filter by variant if applicable
+  let batchQuery = {
     productId: saleItem.inventoryId,
     userId: userId,
     status: 'active',
     quantityRemaining: { $gt: 0 }
-  })
-  .sort({ dateReceived: 1 }) // FIFO - First In, First Out
-  .session(session);
+  };
+  
+  // If item has variants and we're looking for a specific variant
+  if (variantInfo.hasVariant) {
+    batchQuery.hasVariants = true;
+    batchQuery['variants.size'] = variantInfo.size;
+    batchQuery['variants.color'] = variantInfo.color;
+    batchQuery['variants.quantityRemaining'] = { $gt: 0 };
+  }
+  
+  const availableBatches = await InventoryBatch.find(batchQuery)
+    .sort({ dateReceived: 1 }) // FIFO - First In, First Out
+    .session(session);
 
   let totalCost = 0;
   let totalProfit = 0;
@@ -173,31 +216,60 @@ async function processItemWithBatchTracking(saleItem, userId, session, isOrderPr
     for (const batch of availableBatches) {
       if (remainingQuantity <= 0) break;
 
-      const quantityFromThisBatch = Math.min(remainingQuantity, batch.quantityRemaining);
+      let quantityFromThisBatch = 0;
+      let costPriceFromBatch = batch.costPrice;
       
-      // Only update batch quantities for regular POS sales, not order processing
-      if (!isOrderProcessing) {
-        batch.quantitySold += quantityFromThisBatch;
-        batch.quantityRemaining -= quantityFromThisBatch;
+      if (variantInfo.hasVariant && batch.hasVariants) {
+        // Get the specific variant from the batch
+        const batchVariant = batch.getVariant(variantInfo.size, variantInfo.color);
         
-        // Update batch status if depleted
-        if (batch.quantityRemaining === 0) {
-          batch.status = 'depleted';
+        if (batchVariant && batchVariant.quantityRemaining > 0) {
+          quantityFromThisBatch = Math.min(remainingQuantity, batchVariant.quantityRemaining);
+          
+          // Only update batch quantities for regular POS sales
+          if (!isOrderProcessing) {
+            await batch.sellFromBatch(quantityFromThisBatch, variantInfo.size, variantInfo.color);
+          }
+          
+          // Track batch usage with variant info
+          batchesSoldFrom.push({
+            batchId: batch._id,
+            batchCode: batch.batchCode,
+            quantityFromBatch: quantityFromThisBatch,
+            costPriceFromBatch: costPriceFromBatch,
+            batchVariant: {
+              size: variantInfo.size,
+              color: variantInfo.color,
+              variantSku: variantInfo.variantSku
+            }
+          });
+        }
+      } else {
+        // Non-variant batch
+        quantityFromThisBatch = Math.min(remainingQuantity, batch.quantityRemaining);
+        
+        // Only update batch quantities for regular POS sales
+        if (!isOrderProcessing) {
+          batch.quantitySold += quantityFromThisBatch;
+          batch.quantityRemaining -= quantityFromThisBatch;
+          
+          if (batch.quantityRemaining === 0) {
+            batch.status = 'depleted';
+          }
+          
+          await batch.save({ session });
         }
         
-        await batch.save({ session });
+        batchesSoldFrom.push({
+          batchId: batch._id,
+          batchCode: batch.batchCode,
+          quantityFromBatch: quantityFromThisBatch,
+          costPriceFromBatch: costPriceFromBatch
+        });
       }
 
-      // Track batch usage for both POS and order processing
-      batchesSoldFrom.push({
-        batchId: batch._id,
-        batchCode: batch.batchCode,
-        quantityFromBatch: quantityFromThisBatch,
-        costPriceFromBatch: batch.costPrice
-      });
-
-      const costFromThisBatch = quantityFromThisBatch * batch.costPrice;
-      const profitFromThisBatch = quantityFromThisBatch * (saleItem.unitPrice - batch.costPrice);
+      const costFromThisBatch = quantityFromThisBatch * costPriceFromBatch;
+      const profitFromThisBatch = quantityFromThisBatch * (saleItem.unitPrice - costPriceFromBatch);
       
       totalCost += costFromThisBatch;
       totalProfit += profitFromThisBatch;
@@ -220,9 +292,118 @@ async function processItemWithBatchTracking(saleItem, userId, session, isOrderPr
     console.warn(`No batches found for ${inventoryItem.productName}, using inventory cost price`);
   }
 
-  // Only update inventory quantities for regular POS sales, not order processing
+  // Only update inventory quantities for regular POS sales
   if (!isOrderProcessing) {
-    await inventoryItem.recordSale(saleItem.quantity);
+    if (variantInfo.hasVariant && selectedVariant) {
+      // Update variant stock
+      await inventoryItem.recordVariantSale(variantInfo.size, variantInfo.color, saleItem.quantity);
+    } else {
+      // Update main inventory stock
+      await inventoryItem.recordSale(saleItem.quantity);
+    }
+  }
+
+  // Capture category-specific details at time of sale
+  const categoryDetails = {
+    category: inventoryItem.category
+  };
+  
+  // Add category-specific details based on product category
+  if (inventoryItem.category === 'Clothing' && inventoryItem.clothingDetails) {
+    categoryDetails.clothingDetails = {
+      gender: inventoryItem.clothingDetails.gender,
+      productType: inventoryItem.clothingDetails.productType,
+      material: inventoryItem.clothingDetails.material,
+      style: inventoryItem.clothingDetails.style,
+      occasion: inventoryItem.clothingDetails.occasion
+    };
+  } else if (inventoryItem.category === 'Shoes' && inventoryItem.shoesDetails) {
+    categoryDetails.shoesDetails = {
+      gender: inventoryItem.shoesDetails.gender,
+      shoeType: inventoryItem.shoesDetails.shoeType,
+      material: inventoryItem.shoesDetails.material,
+      occasion: inventoryItem.shoesDetails.occasion
+    };
+  } else if (inventoryItem.category === 'Accessories' && inventoryItem.accessoriesDetails) {
+    categoryDetails.accessoriesDetails = {
+      accessoryType: inventoryItem.accessoriesDetails.accessoryType,
+      gender: inventoryItem.accessoriesDetails.gender,
+      material: inventoryItem.accessoriesDetails.material
+    };
+  } else if (inventoryItem.category === 'Perfumes' && inventoryItem.perfumeDetails) {
+    categoryDetails.perfumeDetails = {
+      fragranceType: inventoryItem.perfumeDetails.fragranceType,
+      gender: inventoryItem.perfumeDetails.gender,
+      volume: inventoryItem.perfumeDetails.volume,
+      scentFamily: inventoryItem.perfumeDetails.scentFamily,
+      concentration: inventoryItem.perfumeDetails.concentration,
+      occasion: inventoryItem.perfumeDetails.occasion
+    };
+  } else if (inventoryItem.category === 'Food' && inventoryItem.foodDetails) {
+    categoryDetails.foodDetails = {
+      foodType: inventoryItem.foodDetails.foodType,
+      cuisineType: inventoryItem.foodDetails.cuisineType,
+      servingSize: inventoryItem.foodDetails.servingSize,
+      spiceLevel: inventoryItem.foodDetails.spiceLevel,
+      allergens: inventoryItem.foodDetails.allergens
+    };
+  } else if (inventoryItem.category === 'Beverages' && inventoryItem.beveragesDetails) {
+    categoryDetails.beveragesDetails = {
+      beverageType: inventoryItem.beveragesDetails.beverageType,
+      volume: inventoryItem.beveragesDetails.volume,
+      packaging: inventoryItem.beveragesDetails.packaging,
+      isAlcoholic: inventoryItem.beveragesDetails.isAlcoholic,
+      isCarbonated: inventoryItem.beveragesDetails.isCarbonated,
+      flavorProfile: inventoryItem.beveragesDetails.flavorProfile
+    };
+  } else if (inventoryItem.category === 'Electronics' && inventoryItem.electronicsDetails) {
+    categoryDetails.electronicsDetails = {
+      productType: inventoryItem.electronicsDetails.productType,
+      brand: inventoryItem.electronicsDetails.brand,
+      model: inventoryItem.electronicsDetails.model,
+      condition: inventoryItem.electronicsDetails.condition,
+      warranty: inventoryItem.electronicsDetails.warranty
+    };
+  } else if (inventoryItem.category === 'Books' && inventoryItem.booksDetails) {
+    categoryDetails.booksDetails = {
+      bookType: inventoryItem.booksDetails.bookType,
+      author: inventoryItem.booksDetails.author,
+      publisher: inventoryItem.booksDetails.publisher,
+      isbn: inventoryItem.booksDetails.isbn,
+      format: inventoryItem.booksDetails.format,
+      condition: inventoryItem.booksDetails.condition
+    };
+  } else if (inventoryItem.category === 'Home & Garden' && inventoryItem.homeGardenDetails) {
+    categoryDetails.homeGardenDetails = {
+      productType: inventoryItem.homeGardenDetails.productType,
+      room: inventoryItem.homeGardenDetails.room,
+      material: inventoryItem.homeGardenDetails.material,
+      assemblyRequired: inventoryItem.homeGardenDetails.assemblyRequired
+    };
+  } else if (inventoryItem.category === 'Sports' && inventoryItem.sportsDetails) {
+    categoryDetails.sportsDetails = {
+      sportType: inventoryItem.sportsDetails.sportType,
+      productType: inventoryItem.sportsDetails.productType,
+      brand: inventoryItem.sportsDetails.brand,
+      performanceLevel: inventoryItem.sportsDetails.performanceLevel
+    };
+  } else if (inventoryItem.category === 'Automotive' && inventoryItem.automotiveDetails) {
+    categoryDetails.automotiveDetails = {
+      productType: inventoryItem.automotiveDetails.productType,
+      brand: inventoryItem.automotiveDetails.brand,
+      partNumber: inventoryItem.automotiveDetails.partNumber,
+      condition: inventoryItem.automotiveDetails.condition,
+      compatibleVehicles: inventoryItem.automotiveDetails.compatibleVehicles
+    };
+  } else if (inventoryItem.category === 'Health & Beauty' && inventoryItem.healthBeautyDetails) {
+    categoryDetails.healthBeautyDetails = {
+      productType: inventoryItem.healthBeautyDetails.productType,
+      brand: inventoryItem.healthBeautyDetails.brand,
+      skinType: inventoryItem.healthBeautyDetails.skinType,
+      volume: inventoryItem.healthBeautyDetails.volume,
+      scent: inventoryItem.healthBeautyDetails.scent,
+      isOrganic: inventoryItem.healthBeautyDetails.isOrganic
+    };
   }
 
   // Create inventory activity with appropriate type and metadata
@@ -230,23 +411,35 @@ async function processItemWithBatchTracking(saleItem, userId, session, isOrderPr
     userId: userId,
     inventoryId: saleItem.inventoryId,
     activityType: isOrderProcessing ? 'order_processed' : 'stock_removed',
-    description: isOrderProcessing 
-      ? `Order processed: ${saleItem.quantity} ${inventoryItem.unitOfMeasure} (no stock deduction)`
-      : `Sold ${saleItem.quantity} ${inventoryItem.unitOfMeasure} via POS`,
+    description: variantInfo.hasVariant
+      ? `${isOrderProcessing ? 'Order processed' : 'Sold'}: ${saleItem.quantity} ${inventoryItem.unitOfMeasure} (${variantInfo.color} - ${variantInfo.size})${isOrderProcessing ? ' (no stock deduction)' : ' via POS'}`
+      : `${isOrderProcessing ? 'Order processed' : 'Sold'}: ${saleItem.quantity} ${inventoryItem.unitOfMeasure}${isOrderProcessing ? ' (no stock deduction)' : ' via POS'}`,
     stockMovement: isOrderProcessing ? null : {
       type: 'subtract',
       quantity: saleItem.quantity,
       reason: 'POS Sale',
-      previousStock: inventoryItem.quantityInStock + saleItem.quantity,
-      newStock: inventoryItem.quantityInStock
+      previousStock: variantInfo.hasVariant ? selectedVariant.quantityInStock + saleItem.quantity : inventoryItem.quantityInStock + saleItem.quantity,
+      newStock: variantInfo.hasVariant ? selectedVariant.quantityInStock : inventoryItem.quantityInStock,
+      variant: variantInfo.hasVariant ? {
+        size: variantInfo.size,
+        color: variantInfo.color,
+        sku: variantInfo.variantSku
+      } : null
     },
     metadata: {
       saleType: isOrderProcessing ? 'order_processing' : 'pos',
       stockDeducted: !isOrderProcessing,
       isOrderProcessing: isOrderProcessing,
+      hasVariant: variantInfo.hasVariant,
+      variant: variantInfo.hasVariant ? {
+        size: variantInfo.size,
+        color: variantInfo.color,
+        sku: variantInfo.variantSku
+      } : null,
       batchesUsed: batchesSoldFrom.map(b => ({
         batchCode: b.batchCode,
-        quantity: b.quantityFromBatch
+        quantity: b.quantityFromBatch,
+        variant: b.batchVariant
       }))
     }
   });
@@ -277,7 +470,7 @@ async function processItemWithBatchTracking(saleItem, userId, session, isOrderPr
       totalSaleAmount: saleItem.total,
       unitCostPrice: totalCost / saleItem.quantity,
       totalCostAmount: totalCost,
-      paymentMethod: 'pos', // Will be updated by parent
+      paymentMethod: 'pos',
       saleDate: new Date(),
       status: 'completed',
       soldBy: userId,
@@ -285,12 +478,18 @@ async function processItemWithBatchTracking(saleItem, userId, session, isOrderPr
       notes: isOrderProcessing ? 'Order Processing Sale' : 'POS Sale',
       metadata: {
         isOrderProcessing: isOrderProcessing,
-        stockDeducted: !isOrderProcessing
+        stockDeducted: !isOrderProcessing,
+        hasVariant: variantInfo.hasVariant,
+        variant: variantInfo.hasVariant ? {
+          size: variantInfo.size,
+          color: variantInfo.color,
+          sku: variantInfo.variantSku
+        } : null
       }
     });
   }
 
-  // Create processed item for sale record
+  // Create processed item for sale record with all details
   const processedItem = {
     inventoryId: saleItem.inventoryId,
     productName: saleItem.productName,
@@ -298,12 +497,14 @@ async function processItemWithBatchTracking(saleItem, userId, session, isOrderPr
     quantity: saleItem.quantity,
     unitPrice: saleItem.unitPrice,
     total: saleItem.total,
+    variant: variantInfo,
     batchesSoldFrom: batchesSoldFrom,
     costBreakdown: {
       totalCost: totalCost,
       weightedAverageCost: totalCost / saleItem.quantity,
       profit: totalProfit
-    }
+    },
+    categoryDetails: categoryDetails
   };
 
   return {

@@ -19,7 +19,9 @@ import {
   Eye,
   MoreHorizontal,
   X,
-  TrendingUp
+  TrendingUp,
+  BarChart3,
+  Trash2
 } from "lucide-react";
 
 export default function InventoryPage() {
@@ -669,32 +671,37 @@ export default function InventoryPage() {
                         {getStatusText(item)}
                       </span>
                     </td>
-                    <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center space-x-1">
-                        {/* <button 
-                          onClick={() => openEditModal(item)}
-                          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all"
-                          title="Edit item"
+                    {/* Actions */}
+                    <td className="px-6 py-4">
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => router.push(`/dashboard/analytics?item=${item._id}`)}
+                          className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                          title="View Analytics"
                         >
-                          <Edit className="w-4 h-4" />
-                        </button> */}
-                        <button 
-                          onClick={() => openStockModal(item)}
-                          className="p-1.5 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-all"
-                          title="Update stock"
-                        >
-                          <Package className="w-4 h-4" />
+                          <BarChart3 className="w-4 h-4" />
                         </button>
-                        <button 
-                          onClick={() => handleItemClick(item._id)}
-                          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all"
-                          title="View details"
+                        <button
+                          onClick={() => router.push(`/dashboard/inventory/${item._id}`)}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="View Details"
                         >
                           <Eye className="w-4 h-4" />
                         </button>
-                        {/* <button className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all">
-                          <MoreHorizontal className="w-4 h-4" />
-                        </button> */}
+                        <button
+                          onClick={() => handleEditItem(item)}
+                          className="p-2 text-teal-600 hover:bg-teal-50 rounded-lg transition-colors"
+                          title="Edit"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteItem(item)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </td>
                   </tr>

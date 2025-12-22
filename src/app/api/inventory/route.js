@@ -21,16 +21,23 @@ export async function GET(req) {
 
     const { searchParams } = new URL(req.url);
     const page = parseInt(searchParams.get('page')) || 1;
-    const limit = parseInt(searchParams.get('limit')) || 10;
+    const limit = parseInt(searchParams.get('limit')) || 100;
     const sortBy = searchParams.get('sortBy') || 'productName';
     const sortOrder = parseInt(searchParams.get('sortOrder')) || 1;
-    const category = searchParams.get('category') || null;
-    const search = searchParams.get('search') || null;
+    const category = searchParams.get('category');
     const status = searchParams.get('status') || 'Active';
+    const search = searchParams.get('search');
 
-    const options = { page, limit, sortBy, sortOrder, category, search, status };
-    const inventory = await Inventory.getInventoryByUser(user._id, options);
-    
+    const inventory = await Inventory.getInventoryByUser(user._id, {
+      page,
+      limit,
+      sortBy,
+      sortOrder,
+      category,
+      status,
+      search
+    });
+
     // Get total count for pagination
     const totalQuery = { userId: user._id };
     if (category) totalQuery.category = category;

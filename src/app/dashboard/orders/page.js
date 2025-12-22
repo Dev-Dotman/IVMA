@@ -11,6 +11,7 @@ import {
   Filter, 
   Eye, 
   Edit, 
+  Store,
   Package, 
   Truck, 
   CheckCircle, 
@@ -49,7 +50,7 @@ export default function OrdersPage() {
     { value: 'store', label: 'Filter by Store' }
   ];
 
-  // Status filter options
+  // Status options - Add 'Processed' status
   const statusOptions = [
     { value: '', label: 'All Status' },
     { value: 'pending', label: 'Pending' },
@@ -67,6 +68,7 @@ export default function OrdersPage() {
     { value: 'pending', label: 'Pending Payment' },
     { value: 'completed', label: 'Paid' },
     { value: 'failed', label: 'Failed' },
+    { value: 'processed', label: 'Processed' },
     { value: 'refunded', label: 'Refunded' }
   ];
 
@@ -216,7 +218,7 @@ export default function OrdersPage() {
     const statusMap = {
       pending: { color: 'bg-yellow-100 text-yellow-800', icon: Clock },
       confirmed: { color: 'bg-blue-100 text-blue-800', icon: CheckCircle },
-      processing: { color: 'bg-purple-100 text-purple-800', icon: Package },
+      processed: { color: 'bg-purple-100 text-purple-800', icon: Package },
       shipped: { color: 'bg-indigo-100 text-indigo-800', icon: Truck },
       delivered: { color: 'bg-green-100 text-green-800', icon: CheckCircle },
       cancelled: { color: 'bg-red-100 text-red-800', icon: XCircle },
@@ -489,8 +491,24 @@ export default function OrdersPage() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-sm text-gray-900">
-                          {order.items.slice(0, 2).map(item => item.productSnapshot.productName).join(', ')}
-                          {order.items.length > 2 && ` +${order.items.length - 2} more`}
+                          {order.items.slice(0, 2).map((item, idx) => {
+                            const itemName = item.productSnapshot.productName;
+                            // Check if item has variant information
+                            if (item.variant && item.variant.size && item.variant.color) {
+                              return (
+                                <div key={idx} className="mb-1">
+                                  <span className="font-medium">{itemName}</span>
+                                  <span className="text-teal-600 text-xs ml-1">
+                                    ({item.variant.color} - {item.variant.size})
+                                  </span>
+                                </div>
+                              );
+                            }
+                            return <div key={idx} className="mb-1">{itemName}</div>;
+                          })}
+                          {order.items.length > 2 && (
+                            <span className="text-gray-400 text-xs"> +{order.items.length - 2} more</span>
+                          )}
                         </div>
                         <div className="text-xs text-gray-500">
                           {order.stores.length > 1 && `${order.stores.length} stores`}
@@ -534,13 +552,13 @@ export default function OrdersPage() {
                           </button>
                           
                           {/* Status Update Button */}
-                          <button 
+                          {/* <button 
                             onClick={() => handleStatusUpdateClick(order)}
                             className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
                             title="Update status"
                           >
                             <Edit className="w-4 h-4" />
-                          </button>
+                          </button> */}
                           
                           {/* Tracking button for shipped orders */}
                           {order.status === 'shipped' && order.tracking.trackingUrl && (

@@ -55,116 +55,12 @@ export async function PUT(request, { params }) {
       );
     }
 
-    const { id } = await params;
-    const updates = await request.json();
+    const userId = user._id;
+    const { id } = params;
+    const updateData = await request.json();
 
-    // Sanitize category-specific details to ensure arrays remain arrays
-    const sanitizeCategoryDetails = (details) => {
-      if (!details || typeof details !== 'object') return details;
-      
-      const sanitized = { ...details };
-      
-      // Iterate through all properties
-      Object.keys(sanitized).forEach(key => {
-        const value = sanitized[key];
-        
-        // Check if value is a stringified array
-        if (typeof value === 'string' && value.trim().startsWith('[')) {
-          try {
-            // Try to parse it back to an array
-            sanitized[key] = JSON.parse(value);
-          } catch (e) {
-            // If parsing fails, leave it as is
-            console.warn(`Failed to parse ${key}:`, e);
-          }
-        }
-        
-        // Recursively sanitize nested objects
-        if (value && typeof value === 'object' && !Array.isArray(value)) {
-          sanitized[key] = sanitizeCategoryDetails(value);
-        }
-      });
-      
-      return sanitized;
-    };
-
-    // Sanitize all category-specific details
-    if (updates.clothingDetails) {
-      updates.clothingDetails = sanitizeCategoryDetails(updates.clothingDetails);
-    }
-    if (updates.shoesDetails) {
-      updates.shoesDetails = sanitizeCategoryDetails(updates.shoesDetails);
-    }
-    if (updates.accessoriesDetails) {
-      updates.accessoriesDetails = sanitizeCategoryDetails(updates.accessoriesDetails);
-    }
-    if (updates.perfumeDetails) {
-      updates.perfumeDetails = sanitizeCategoryDetails(updates.perfumeDetails);
-    }
-    if (updates.foodDetails) {
-      updates.foodDetails = sanitizeCategoryDetails(updates.foodDetails);
-    }
-    if (updates.beveragesDetails) {
-      updates.beveragesDetails = sanitizeCategoryDetails(updates.beveragesDetails);
-    }
-    if (updates.electronicsDetails) {
-      updates.electronicsDetails = sanitizeCategoryDetails(updates.electronicsDetails);
-    }
-    if (updates.booksDetails) {
-      updates.booksDetails = sanitizeCategoryDetails(updates.booksDetails);
-    }
-    if (updates.homeGardenDetails) {
-      updates.homeGardenDetails = sanitizeCategoryDetails(updates.homeGardenDetails);
-    }
-    if (updates.sportsDetails) {
-      updates.sportsDetails = sanitizeCategoryDetails(updates.sportsDetails);
-    }
-    if (updates.automotiveDetails) {
-      updates.automotiveDetails = sanitizeCategoryDetails(updates.automotiveDetails);
-    }
-    if (updates.healthBeautyDetails) {
-      updates.healthBeautyDetails = sanitizeCategoryDetails(updates.healthBeautyDetails);
-    }
-
-    // Convert numeric string fields to numbers for Food/Beverages
-    if (updates.category === 'Food' && updates.foodDetails) {
-      if (updates.foodDetails.maxOrdersPerDay !== undefined) {
-        updates.foodDetails.maxOrdersPerDay = parseInt(updates.foodDetails.maxOrdersPerDay) || 50;
-      }
-      if (updates.foodDetails.deliveryTime?.value !== undefined) {
-        updates.foodDetails.deliveryTime.value = parseInt(updates.foodDetails.deliveryTime.value) || 30;
-      }
-    }
-    
-    if (updates.category === 'Beverages' && updates.beveragesDetails) {
-      if (updates.beveragesDetails.maxOrdersPerDay !== undefined) {
-        updates.beveragesDetails.maxOrdersPerDay = parseInt(updates.beveragesDetails.maxOrdersPerDay) || 50;
-      }
-      if (updates.beveragesDetails.deliveryTime?.value !== undefined) {
-        updates.beveragesDetails.deliveryTime.value = parseInt(updates.beveragesDetails.deliveryTime.value) || 30;
-      }
-    }
-
-    // Convert numeric fields for Books
-    if (updates.category === 'Books' && updates.booksDetails) {
-      if (updates.booksDetails.publicationYear !== undefined) {
-        updates.booksDetails.publicationYear = parseInt(updates.booksDetails.publicationYear) || null;
-      }
-      if (updates.booksDetails.pages !== undefined) {
-        updates.booksDetails.pages = parseInt(updates.booksDetails.pages) || null;
-      }
-    }
-
-    // Find and update the item
-    const item = await Inventory.findOneAndUpdate(
-      { _id: id, userId: user._id },
-      { 
-        ...updates,
-        lastUpdated: new Date() 
-      },
-      { new: true, runValidators: true }
-    );
-
+    // Find the inventory item
+    const item = await Inventory.findOne({ _id: id, userId });
     if (!item) {
       return NextResponse.json(
         { success: false, message: 'Item not found' },
@@ -172,17 +68,70 @@ export async function PUT(request, { params }) {
       );
     }
 
+    // Process images if updated
+    if (updateData.images && updateData.images.length > 0) {
+      // Set the primary image as the main image field
+      const primaryImage = updateData.images.find(img => img.isPrimary);
+      if (primaryImage) {
+        updateData.image = primaryImage.url;
+      } else {
+        updateData.images[0].isPrimary = true;
+        updateData.image = updateData.images[0].url;
+      }
+    }
+
+    // Process variants if updated
+    if (updateData.hasVariants && updateData.variants && updateData.variants.length > 0) {
+      const categoryCode = updateData.category.substring(0, 3).toUpperCase();
+      
+      updateData.variants = updateData.variants.map((variant, index) => {
+        // Generate SKU for new variants
+        if (!variant.sku) {
+          variant.sku = `${categoryCode}-${item.sku.split('-')[1]}-${variant.color.substring(0, 3).toUpperCase()}-${variant.size}`;
+        }
+        
+        // Ensure default values
+        variant.soldQuantity = variant.soldQuantity || 0;
+        variant.reorderLevel = variant.reorderLevel || 5;
+        variant.isActive = variant.isActive !== undefined ? variant.isActive : true;
+        variant.images = variant.images || [];
+        
+        return variant;
+      });
+
+      // Recalculate total stock from all variants
+      const totalVariantStock = updateData.variants.reduce((sum, v) => sum + (v.quantityInStock || 0), 0);
+      updateData.quantityInStock = totalVariantStock;
+      
+      // Update totalStockedQuantity if stock increased
+      if (totalVariantStock > item.quantityInStock) {
+        updateData.totalStockedQuantity = item.totalStockedQuantity + (totalVariantStock - item.quantityInStock);
+      }
+    }
+
+    // Update the item
+    Object.assign(item, updateData);
+    item.lastUpdated = new Date();
+    await item.save();
+
     return NextResponse.json({
       success: true,
       data: item
     });
+
   } catch (error) {
     console.error('Error updating inventory item:', error);
+    
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => err.message);
+      return NextResponse.json(
+        { success: false, message: errors.join(', ') },
+        { status: 400 }
+      );
+    }
+
     return NextResponse.json(
-      { 
-        success: false,
-        error: error.message || 'Failed to update inventory item' 
-      },
+      { success: false, message: 'Failed to update inventory item' },
       { status: 500 }
     );
   }

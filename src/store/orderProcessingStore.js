@@ -16,29 +16,73 @@ const useOrderProcessingStore = create(
       
       // Set order for processing
       setProcessingOrder: (order) => {
-        set({
-          processingOrder: order,
-          isProcessingOrder: true,
-          orderCart: order.items.map(item => ({
-            _id: item.product || item.inventoryId,
+        if (!order) {
+          set({
+            processingOrder: null,
+            orderCart: [],
+            orderCustomer: null,
+            isProcessingOrder: false
+          });
+          return;
+        }
+
+        // Transform order items to cart format with variant information
+        const cartItems = order.items.map(item => {
+          const baseItem = {
+            _id: item.productSnapshot._id || item.product,
             productName: item.productSnapshot.productName,
             sku: item.productSnapshot.sku,
             sellingPrice: item.price,
-            quantityInStock: 999, // We'll verify this in POS
+            costPrice: item.price * 0.7, // Estimate if not available
+            quantityInStock: 9999, // Large number for order processing
             quantity: item.quantity,
-            category: item.productSnapshot.category || 'General',
-            brand: item.productSnapshot.brand || '',
+            category: item.productSnapshot.category,
             unitOfMeasure: item.productSnapshot.unitOfMeasure || 'Piece',
-            image: item.productSnapshot.image || null,
-            // Add order-specific data
-            orderItemId: item._id,
-            isOrderItem: true
-          })),
-          orderCustomer: {
-            name: `${order.customerSnapshot.firstName} ${order.customerSnapshot.lastName}`,
-            phone: order.customerSnapshot.phone || order.shippingAddress.phone,
-            email: order.customerSnapshot.email || ''
+            image: item.productSnapshot.image,
+            hasVariants: item.productSnapshot.hasVariants || false
+          };
+
+          // Include variant information if it exists
+          if (item.variant && item.variant.size && item.variant.color) {
+            return {
+              ...baseItem,
+              variant: {
+                size: item.variant.size,
+                color: item.variant.color,
+                variantSku: item.variant.variantSku,
+                variantId: item.variant.variantId,
+                images: item.variant.images || []
+              },
+              // Override display name to include variant
+              displayName: `${item.productSnapshot.productName} (${item.variant.color} - ${item.variant.size})`,
+              // Use variant SKU if available
+              sku: item.variant.variantSku || item.productSnapshot.sku
+            };
           }
+
+          return baseItem;
+        });
+
+        // Extract customer information
+        const customer = {
+          name: `${order.customerSnapshot.firstName} ${order.customerSnapshot.lastName}`.trim(),
+          phone: order.customerSnapshot.phone || '',
+          email: order.customerSnapshot.email || '',
+          address: order.shippingAddress ? {
+            street: order.shippingAddress.street,
+            city: order.shippingAddress.city,
+            state: order.shippingAddress.state,
+            country: order.shippingAddress.country,
+            postalCode: order.shippingAddress.postalCode,
+            landmark: order.shippingAddress.landmark
+          } : null
+        };
+
+        set({
+          processingOrder: order,
+          orderCart: cartItems,
+          orderCustomer: customer,
+          isProcessingOrder: true
         });
       },
       

@@ -31,6 +31,37 @@ const saleItemSchema = new mongoose.Schema({
     required: [true, 'Item total is required'],
     min: [0, 'Item total cannot be negative']
   },
+  
+  // Variant information (if item has variants)
+  variant: {
+    hasVariant: {
+      type: Boolean,
+      default: false
+    },
+    size: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    color: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    variantSku: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    variantId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null
+    },
+    images: [{
+      type: String // Variant-specific images
+    }]
+  },
+  
   // Batch tracking for sales
   batchesSoldFrom: [{
     batchId: {
@@ -39,8 +70,15 @@ const saleItemSchema = new mongoose.Schema({
     },
     batchCode: String,
     quantityFromBatch: Number,
-    costPriceFromBatch: Number
+    costPriceFromBatch: Number,
+    // Variant info from batch if applicable
+    batchVariant: {
+      size: String,
+      color: String,
+      variantSku: String
+    }
   }],
+  
   // Cost and profit tracking
   costBreakdown: {
     totalCost: {
@@ -54,6 +92,116 @@ const saleItemSchema = new mongoose.Schema({
     profit: {
       type: Number,
       default: 0
+    }
+  },
+  
+  // Category-specific snapshot (capture product details at time of sale)
+  categoryDetails: {
+    category: {
+      type: String,
+      trim: true
+    },
+    // Clothing details snapshot
+    clothingDetails: {
+      gender: String,
+      productType: String,
+      material: String,
+      style: [String],
+      occasion: [String]
+    },
+    // Shoes details snapshot
+    shoesDetails: {
+      gender: String,
+      shoeType: String,
+      material: String,
+      occasion: [String]
+    },
+    // Accessories details snapshot
+    accessoriesDetails: {
+      accessoryType: String,
+      gender: String,
+      material: String
+    },
+    // Perfume details snapshot
+    perfumeDetails: {
+      fragranceType: String,
+      gender: String,
+      volume: String,
+      scentFamily: String,
+      concentration: String,
+      occasion: [String]
+    },
+    // Food details snapshot
+    foodDetails: {
+      foodType: String,
+      cuisineType: [String],
+      servingSize: String,
+      spiceLevel: String,
+      allergens: [String]
+    },
+    // Beverages details snapshot
+    beveragesDetails: {
+      beverageType: String,
+      volume: String,
+      packaging: String,
+      isAlcoholic: Boolean,
+      isCarbonated: Boolean,
+      flavorProfile: [String]
+    },
+    // Electronics details snapshot
+    electronicsDetails: {
+      productType: String,
+      brand: String,
+      model: String,
+      condition: String,
+      warranty: {
+        hasWarranty: Boolean,
+        duration: String
+      }
+    },
+    // Books details snapshot
+    booksDetails: {
+      bookType: String,
+      author: String,
+      publisher: String,
+      isbn: String,
+      format: String,
+      condition: String
+    },
+    // Home & Garden details snapshot
+    homeGardenDetails: {
+      productType: String,
+      room: [String],
+      material: String,
+      assemblyRequired: Boolean
+    },
+    // Sports details snapshot
+    sportsDetails: {
+      sportType: String,
+      productType: String,
+      brand: String,
+      performanceLevel: String
+    },
+    // Automotive details snapshot
+    automotiveDetails: {
+      productType: String,
+      brand: String,
+      partNumber: String,
+      condition: String,
+      compatibleVehicles: [{
+        make: String,
+        model: String,
+        year: String
+      }]
+    },
+    // Health & Beauty details snapshot
+    healthBeautyDetails: {
+      productType: String,
+      brand: String,
+      skinType: [String],
+      volume: String,
+      scent: String,
+      isOrganic: Boolean
     }
   }
 });

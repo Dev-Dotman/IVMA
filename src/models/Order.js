@@ -15,7 +15,19 @@ const OrderItemSchema = new mongoose.Schema({
     sku: String,
     image: String,
     category: String,
-    unitOfMeasure: String
+    unitOfMeasure: String,
+    brand: String,
+    hasVariants: { type: Boolean, default: false }
+  },
+  // Variant information (if product has variants)
+  variant: {
+    variantId: {
+      type: mongoose.Schema.Types.ObjectId
+    },
+    color: String,
+    size: String,
+    sku: String,
+    image: String
   },
   quantity: {
     type: Number,
