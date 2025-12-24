@@ -2,13 +2,7 @@ import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Order from '@/models/Order';
 import { verifySession } from '@/lib/auth';
-import Store from '@/models/Store';
-import User from '@/models/User';
-import InventoryBatch from '@/models/InventoryBatch';
-import Inventory from '@/models/Inventory';
-import Customer from '@/models/Customer';
 
-// GET - Fetch orders for the authenticated user's stores
 export async function GET(req) {
   try {
     await connectToDatabase();
@@ -23,78 +17,135 @@ export async function GET(req) {
 
     const { searchParams } = new URL(req.url);
     const page = parseInt(searchParams.get('page')) || 1;
-    const limit = parseInt(searchParams.get('limit')) || 10;
-    const status = searchParams.get('status'); // Can be comma-separated: "pending,confirmed"
+    const limit = parseInt(searchParams.get('limit')) || 20;
+    const status = searchParams.get('status');
+    const paymentStatus = searchParams.get('paymentStatus');
     const search = searchParams.get('search');
-    const sortBy = searchParams.get('sortBy') || 'createdAt';
-    const sortOrder = searchParams.get('sortOrder') === 'asc' ? 1 : -1;
-    const createdFrom = searchParams.get('createdFrom'); // Add date range support
-    const createdTo = searchParams.get('createdTo');
 
-    // Build query
+    // Build optimized query
     const query = {
       'items.seller': user._id
     };
 
-    // Filter by status (support multiple statuses)
     if (status) {
-      const statuses = status.split(',').map(s => s.trim());
-      query.status = { $in: statuses };
+      query.status = status;
     }
 
-    // Filter by date range
-    if (createdFrom || createdTo) {
-      query.createdAt = {};
-      if (createdFrom) {
-        query.createdAt.$gte = new Date(createdFrom);
-      }
-      if (createdTo) {
-        query.createdAt.$lte = new Date(createdTo);
-      }
+    if (paymentStatus) {
+      query['paymentInfo.status'] = paymentStatus;
     }
 
-    // Search by order number or customer name
     if (search) {
       query.$or = [
         { orderNumber: { $regex: search, $options: 'i' } },
+        { 'customerSnapshot.email': { $regex: search, $options: 'i' } },
         { 'customerSnapshot.firstName': { $regex: search, $options: 'i' } },
-        { 'customerSnapshot.lastName': { $regex: search, $options: 'i' } },
-        { 'customerSnapshot.email': { $regex: search, $options: 'i' } }
+        { 'customerSnapshot.lastName': { $regex: search, $options: 'i' } }
       ];
     }
 
     const skip = (page - 1) * limit;
 
-    // Get total count for pagination
-    const total = await Order.countDocuments(query);
+    // Use Promise.all to fetch orders and stats in parallel
+    const [orders, total, stats] = await Promise.all([
+      // Fetch paginated orders with lean() for better performance
+      Order.find(query)
+        .select('-timeline -__v') // Exclude heavy fields
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+        .exec(),
 
-    // Fetch orders
-    const orders = await Order.find(query)
-      .sort({ [sortBy]: sortOrder })
-      .skip(skip)
-      .limit(limit)
-      .populate('customer', 'firstName lastName email phone')
-      .populate('items.product', 'productName sku image')
-      .lean();
+      // Get total count
+      Order.countDocuments(query).exec(),
+
+      // Calculate stats using aggregation (more efficient)
+      Order.aggregate([
+        { $match: { 'items.seller': user._id } },
+        {
+          $group: {
+            _id: null,
+            totalOrders: { $sum: 1 },
+            pendingOrders: {
+              $sum: {
+                $cond: [
+                  { $in: ['$status', ['pending', 'confirmed']] },
+                  1,
+                  0
+                ]
+              }
+            },
+            completedOrders: {
+              $sum: {
+                $cond: [{ $eq: ['$status', 'delivered'] }, 1, 0]
+              }
+            },
+            // Revenue from orders that are NOT pending/confirmed/cancelled AND have completed payment
+            totalRevenue: {
+              $sum: {
+                $cond: [
+                  { 
+                    $or: [
+                      // Option 1: Payment completed AND not pending/confirmed/cancelled
+                      {
+                        $and: [
+                          { $eq: ['$paymentInfo.status', 'completed'] },
+                          { 
+                            $not: { 
+                              $in: ['$status', ['pending', 'confirmed', 'cancelled']] 
+                            }
+                          }
+                        ]
+                      },
+                      // Option 2: Status is processed (already delivered/completed)
+                      { $in: ['$status', ['processed', 'shipped', 'delivered']] }
+                    ]
+                  },
+                  '$totalAmount',
+                  0
+                ]
+              }
+            }
+          }
+        }
+      ]).exec()
+    ]);
+
+    // Debug log to check what's being calculated
+    console.log('Revenue Calculation Debug:', {
+      statsResult: stats[0],
+      sampleOrder: orders[0] ? {
+        status: orders[0].status,
+        paymentStatus: orders[0].paymentInfo?.status,
+        totalAmount: orders[0].totalAmount
+      } : null
+    });
 
     return NextResponse.json({
       success: true,
       data: {
         orders,
+        stats: stats[0] || {
+          totalOrders: 0,
+          pendingOrders: 0,
+          completedOrders: 0,
+          totalRevenue: 0
+        },
         pagination: {
-          page,
-          limit,
+          current: page,
+          pages: Math.ceil(total / limit),
           total,
-          pages: Math.ceil(total / limit)
+          limit,
+          hasMore: page < Math.ceil(total / limit)
         }
-      },
-      total // Add total at root level for easy access
+      }
     });
 
   } catch (error) {
-    console.error('Get orders error:', error);
+    console.error('Orders fetch error:', error);
     return NextResponse.json(
-      { success: false, message: 'Internal server error', error: error.message },
+      { success: false, message: 'Internal server error' },
       { status: 500 }
     );
   }

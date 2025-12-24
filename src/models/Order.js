@@ -642,5 +642,6 @@ OrderSchema.index({ 'paymentInfo.status': 1 });
 OrderSchema.index({ 'items.store': 1 });
 OrderSchema.index({ 'items.seller': 1 });
 OrderSchema.index({ createdAt: -1 });
+OrderSchema.index({ 'customerSnapshot.email': 1 }); // Index for email searches
 
 export default mongoose.models.Order || mongoose.model('Order', OrderSchema);

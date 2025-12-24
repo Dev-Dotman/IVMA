@@ -5,6 +5,7 @@ import OrderDetailsModal from "@/components/dashboard/OrderDetailsModal";
 import OrderStatusUpdateModal from "@/components/dashboard/OrderStatusUpdateModal";
 import CustomDropdown from "@/components/ui/CustomDropdown";
 import { useAuth } from "@/contexts/AuthContext";
+import { useOrders } from "@/hooks/useOrders";
 import { 
   ShoppingBag, 
   Search, 
@@ -24,22 +25,40 @@ import {
   MoreHorizontal,
   X,
   ExternalLink,
-  Download
+  Download,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 
 export default function OrdersPage() {
   const { secureApiCall } = useAuth();
-  const [orders, setOrders] = useState([]);
-  const [orderStats, setOrderStats] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterBy, setFilterBy] = useState('all');
   const [filterValue, setFilterValue] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [isOrderDetailsModalOpen, setIsOrderDetailsModalOpen] = useState(false);
   const [isStatusUpdateModalOpen, setIsStatusUpdateModalOpen] = useState(false);
   const [selectedOrderForUpdate, setSelectedOrderForUpdate] = useState(null);
-  const [updatingOrders, setUpdatingOrders] = useState(new Set());
+
+  // Use TanStack Query hook
+  const {
+    orders,
+    stats: orderStats,
+    pagination,
+    isLoading,
+    isFetching,
+    isError,
+    updateStatus,
+    isUpdating,
+    refetch,
+    prefetchNextPage
+  } = useOrders({
+    page: currentPage,
+    filterBy,
+    filterValue,
+    searchTerm
+  });
 
   // Filter options
   const filterOptions = [
@@ -72,106 +91,57 @@ export default function OrdersPage() {
     { value: 'refunded', label: 'Refunded' }
   ];
 
-  // Fetch orders
-  const fetchOrders = async () => {
-    try {
-      setLoading(true);
-      const params = new URLSearchParams();
-      
-      if (filterBy === 'status' && filterValue) {
-        params.append('status', filterValue);
-      }
-      if (filterBy === 'paymentStatus' && filterValue) {
-        params.append('paymentStatus', filterValue);
-      }
-      if (searchTerm) {
-        params.append('search', searchTerm);
-      }
+  // Prefetch next page when user is near the end
+  useEffect(() => {
+    if (pagination.hasMore) {
+      prefetchNextPage();
+    }
+  }, [currentPage, pagination.hasMore, prefetchNextPage]);
 
-      const url = `/api/orders${params.toString() ? '?' + params.toString() : ''}`;
-      const response = await secureApiCall(url);
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterBy, filterValue, searchTerm]);
+
+  // Update order status using mutation
+  const updateOrderStatus = async (orderId, updateData) => {
+    try {
+      await updateStatus({ orderId, updateData });
       
-      if (response.success) {
-        setOrders(response.data.orders || []);
-        setOrderStats(response.data.stats || null);
+      // Update selected order if needed
+      if (selectedOrder?._id === orderId) {
+        refetch(); // Refresh to get updated timeline
       }
     } catch (error) {
-      console.error('Error fetching orders:', error);
-      setOrders([]);
-    } finally {
-      setLoading(false);
+      console.error('Error updating order:', error);
+      throw error;
     }
   };
 
+  // Debounced search effect with improved logic
   useEffect(() => {
-    fetchOrders();
-  }, [filterBy, filterValue, searchTerm]);
+    const handler = setTimeout(() => {
+      refetch();
+    }, 500);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [searchTerm, filterBy, filterValue, refetch]);
+
+  // Handle page change
+  const handlePageChange = (newPage) => {
+    if (newPage >= 1 && newPage <= pagination.pages) {
+      setCurrentPage(newPage);
+      // Scroll to top of table
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
 
   // Handle status update with new modal
   const handleStatusUpdateClick = (order) => {
     setSelectedOrderForUpdate(order);
     setIsStatusUpdateModalOpen(true);
-  };
-
-  // Update order status with the new format and refresh order details
-  const updateOrderStatus = async (orderId, updateData) => {
-    setUpdatingOrders(prev => new Set([...prev, orderId]));
-    
-    try {
-      const response = await secureApiCall(`/api/orders/${orderId}/status`, {
-        method: 'PUT',
-        body: JSON.stringify(updateData)
-      });
-
-      if (response.success) {
-        // Update local orders list
-        setOrders(prev => 
-          prev.map(order => 
-            order._id === orderId 
-              ? { 
-                  ...order, 
-                  status: updateData.status, 
-                  tracking: updateData.trackingInfo || order.tracking,
-                  // Add the new timeline event
-                  timeline: [
-                    ...(order.timeline || []),
-                    {
-                      status: updateData.status,
-                      timestamp: new Date(),
-                      note: updateData.note || '',
-                      updatedBy: updateData.updatedBy || 'admin'
-                    }
-                  ]
-                }
-              : order
-          )
-        );
-        
-        // Update selected order if it's the one being updated
-        if (selectedOrder && selectedOrder._id === orderId) {
-          // Fetch fresh order data to get the complete updated timeline
-          try {
-            const orderResponse = await secureApiCall(`/api/orders/${orderId}`);
-            if (orderResponse.success) {
-              setSelectedOrder(orderResponse.data);
-            }
-          } catch (error) {
-            console.error('Error fetching updated order:', error);
-          }
-        }
-      } else {
-        throw new Error(response.message || 'Failed to update order status');
-      }
-    } catch (error) {
-      console.error('Error updating order:', error);
-      throw error;
-    } finally {
-      setUpdatingOrders(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(orderId);
-        return newSet;
-      });
-    }
   };
 
   // Filter orders based on search and filters
@@ -301,7 +271,8 @@ export default function OrdersPage() {
     }
   ] : [];
 
-  if (loading) {
+  // Show skeleton loader on initial load
+  if (isLoading) {
     return (
       <DashboardLayout title="Order Management" subtitle="Manage customer orders and fulfillment">
         <div className="flex items-center justify-center min-h-[400px]">
@@ -314,32 +285,62 @@ export default function OrdersPage() {
     );
   }
 
+  if (isError) {
+    return (
+      <DashboardLayout title="Order Management" subtitle="Manage customer orders and fulfillment">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <p className="text-red-600 mb-4">Failed to load orders</p>
+            <button
+              onClick={() => refetch()}
+              className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
   return (
     <DashboardLayout title="Order Management" subtitle="Manage customer orders and fulfillment">
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        {statsCards.map((stat, index) => {
-          const IconComponent = stat.icon;
-          return (
-            <div key={index} className="bg-white rounded-2xl p-6 border border-gray-100">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center mb-3">
-                    <div className={`p-2 ${stat.iconBg} rounded-xl mr-3`}>
-                      <IconComponent className={`w-5 h-5 ${stat.iconColor}`} />
+      {/* Live Update Indicator */}
+      {isFetching && !isLoading && (
+        <div className="fixed top-4 right-4 z-50">
+          <div className="bg-teal-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center space-x-2">
+            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+            <span className="text-sm font-medium">Checking for updates...</span>
+          </div>
+        </div>
+      )}
+
+      {/* Stats Cards - Show cached data while loading */}
+      {orderStats && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          {statsCards.map((stat, index) => {
+            const IconComponent = stat.icon;
+            return (
+              <div key={index} className="bg-white rounded-2xl p-6 border border-gray-100">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center mb-3">
+                      <div className={`p-2 ${stat.iconBg} rounded-xl mr-3`}>
+                        <IconComponent className={`w-5 h-5 ${stat.iconColor}`} />
+                      </div>
+                      <h3 className="text-sm font-medium text-gray-900">{stat.title}</h3>
                     </div>
-                    <h3 className="text-sm font-medium text-gray-900">{stat.title}</h3>
+                    <p className="text-xs text-gray-500 mb-3">{stat.description}</p>
+                    <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
                   </div>
-                  <p className="text-xs text-gray-500 mb-3">{stat.description}</p>
-                  <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
                 </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
-      {/* Orders Overview */}
+      {/* Orders Table */}
       <div className="bg-white rounded-2xl border border-gray-100">
         <div className="p-6 border-b border-gray-100">
           <div className="flex items-center justify-between">
@@ -426,7 +427,13 @@ export default function OrdersPage() {
         </div>
 
         {/* Orders Table */}
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto relative">
+          {isFetching && !isLoading && (
+            <div className="absolute top-0 left-0 right-0 h-1 bg-teal-100 z-10">
+              <div className="h-full bg-teal-600 animate-pulse transition-all" style={{ width: '60%' }}></div>
+            </div>
+          )}
+
           <table className="w-full">
             <thead className="bg-gray-50/50">
               <tr>
@@ -584,10 +591,94 @@ export default function OrdersPage() {
               )}
             </tbody>
           </table>
+
+          {/* Show loading indicator without blocking UI */}
+          {isFetching && !isLoading && (
+            <div className="absolute top-0 left-0 right-0 h-1 bg-teal-100 z-10">
+              <div className="h-full bg-teal-600 animate-pulse transition-all" style={{ width: '60%' }}></div>
+            </div>
+          )}
         </div>
 
-        {/* Results Summary */}
-        {orders.length > 0 && (
+        {/* Pagination Controls */}
+        {orders.length > 0 && pagination.pages > 1 && (
+          <div className="px-6 py-4 border-t border-gray-100 bg-gray-50">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2 text-sm text-gray-600">
+                <span>
+                  Showing {((pagination.current - 1) * pagination.limit) + 1} to{' '}
+                  {Math.min(pagination.current * pagination.limit, pagination.total)} of{' '}
+                  {pagination.total} orders
+                </span>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                {/* Previous Button */}
+                <button
+                  onClick={() => handlePageChange(pagination.current - 1)}
+                  disabled={pagination.current === 1}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                    pagination.current === 1
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                {/* Page Numbers */}
+                <div className="flex items-center space-x-1">
+                  {[...Array(pagination.pages)].map((_, index) => {
+                    const pageNumber = index + 1;
+                    
+                    // Show first page, last page, current page, and pages around current
+                    if (
+                      pageNumber === 1 ||
+                      pageNumber === pagination.pages ||
+                      (pageNumber >= pagination.current - 1 && pageNumber <= pagination.current + 1)
+                    ) {
+                      return (
+                        <button
+                          key={pageNumber}
+                          onClick={() => handlePageChange(pageNumber)}
+                          className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                            pagination.current === pageNumber
+                              ? 'bg-teal-600 text-white'
+                              : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
+                          }`}
+                        >
+                          {pageNumber}
+                        </button>
+                      );
+                    } else if (
+                      pageNumber === pagination.current - 2 ||
+                      pageNumber === pagination.current + 2
+                    ) {
+                      return <span key={pageNumber} className="px-2 text-gray-400">...</span>;
+                    }
+                    return null;
+                  })}
+                </div>
+
+                {/* Next Button */}
+                <button
+                  onClick={() => handlePageChange(pagination.current + 1)}
+                  disabled={pagination.current === pagination.pages}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                    pagination.current === pagination.pages
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Results Summary (only show when no pagination) */}
+        {orders.length > 0 && pagination.pages <= 1 && (
           <div className="px-6 py-4 border-t border-gray-100 bg-gray-50">
             <p className="text-sm text-gray-600">
               Showing {filteredOrders.length} of {orders.length} orders
@@ -607,7 +698,7 @@ export default function OrdersPage() {
         }}
         order={selectedOrderForUpdate}
         onStatusUpdate={updateOrderStatus}
-        isUpdating={selectedOrderForUpdate ? updatingOrders.has(selectedOrderForUpdate._id) : false}
+        isUpdating={isUpdating}
       />
 
       {/* Order Details Modal */}
@@ -619,7 +710,7 @@ export default function OrdersPage() {
         }}
         order={selectedOrder}
         onStatusUpdate={updateOrderStatus}
-        updatingStatus={selectedOrder ? updatingOrders.has(selectedOrder._id) : false}
+        updatingStatus={isUpdating}
       />
     </DashboardLayout>
   );

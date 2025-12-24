@@ -3,6 +3,7 @@ import { X, Download, Printer, FileText, Truck, Image as ImageIcon } from "lucid
 import { useAuth } from "@/contexts/AuthContext";
 import { useState, useEffect } from "react";
 import DeliveryScheduleModal from "./DeliveryScheduleModal";
+import { generateReceiptPDF } from "@/lib/email/utils/pdfGenerator";
 
 export default function ReceiptModal({ isOpen, onClose, sale }) {
   const { secureApiCall } = useAuth();
@@ -372,174 +373,72 @@ export default function ReceiptModal({ isOpen, onClose, sale }) {
     }
   };
 
-  // Download receipt as PDF
+  // Download receipt as PDF - NOW USING SHARED UTILITY WITH LOGO AND BRANDING
   const downloadReceiptAsPDF = async () => {
     try {
-      const { jsPDF } = await import('jspdf');
+      const storeName = store?.storeName || 'IVMA Store';
+      const storeLogoUrl = store?.branding?.logo || null; // ✅ Use branding.logo
+      const brandingColors = store?.branding ? {
+        primaryColor: store.branding.primaryColor,
+        secondaryColor: store.branding.secondaryColor
+      } : null;
       
-      const doc = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: [80, 160] // Slightly taller for store info and IVMA branding
-      });
-
-      doc.setFont('courier', 'normal');
-      
-      let yPosition = 8;
-      const lineHeight = 3.5;
-      const pageWidth = 80;
-      const margin = 3;
-      const contentWidth = pageWidth - (margin * 2);
-      
-      // Helper functions
-      const addCenteredText = (text, fontSize = 10, isBold = false) => {
-        doc.setFontSize(fontSize);
-        if (isBold) doc.setFont('courier', 'bold');
-        else doc.setFont('courier', 'normal');
-        
-        const textWidth = doc.getTextWidth(text);
-        const x = (pageWidth - textWidth) / 2;
-        doc.text(text, Math.max(margin, x), yPosition);
-        yPosition += lineHeight;
+      // Prepare order data format
+      const orderData = {
+        orderNumber: sale.transactionId,
+        customer: {
+          name: sale.customer?.name || 'Walk-in Customer',
+          phone: sale.customer?.phone || '',
+          email: sale.customer?.email || ''
+        }
       };
-
-      const addLeftRightText = (leftText, rightText, fontSize = 8) => {
-        doc.setFontSize(fontSize);
-        doc.setFont('courier', 'normal');
-        
-        const rightTextWidth = doc.getTextWidth(rightText);
-        const availableLeftWidth = contentWidth - rightTextWidth - 3;
-        
-        let displayLeftText = leftText;
-        while (doc.getTextWidth(displayLeftText) > availableLeftWidth && displayLeftText.length > 3) {
-          displayLeftText = displayLeftText.slice(0, -4) + '...';
-        }
-        
-        doc.text(displayLeftText, margin, yPosition);
-        doc.text(rightText, pageWidth - margin - rightTextWidth, yPosition);
-        yPosition += lineHeight;
+      
+      // Prepare sale data format
+      const saleData = {
+        transactionId: sale.transactionId,
+        items: sale.items.map(item => ({
+          productName: item.productName,
+          quantity: item.quantity,
+          total: item.total,
+          unitPrice: item.unitPrice
+        })),
+        subtotal: sale.subtotal,
+        discount: sale.discount || 0,
+        tax: sale.tax || 0,
+        total: sale.total,
+        saleDate: sale.saleDate,
+        paymentMethod: sale.paymentMethod,
+        linkedOrderId: sale.linkedOrderId || sale._id // Include linked order ID
       };
-
-      // Store Header
-      const storeName = store?.storeName || 'IVMA STORE';
-      addCenteredText(storeName, 12, true);
       
-      // Store info
-      if (store?.storeType === 'physical' && store?.fullAddress) {
-        doc.setFontSize(7);
-        doc.setFont('courier', 'normal');
-        const addressLines = store.fullAddress.split(', ');
-        addressLines.forEach(line => {
-          addCenteredText(line, 7);
-        });
+      // Generate PDF using shared utility with logo and branding
+      const pdfData = await generateReceiptPDF(orderData, saleData, storeName, storeLogoUrl, brandingColors);
+      
+      if (!pdfData) {
+        throw new Error('PDF generation failed');
       }
       
-      if (store?.storePhone) {
-        addCenteredText(`Tel: ${store.storePhone}`, 7);
+      // Convert base64 to blob and download
+      const binaryString = atob(pdfData.content);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
       }
+      const blob = new Blob([bytes], { type: 'application/pdf' });
       
-      if (store?.storeEmail) {
-        addCenteredText(`Email: ${store.storeEmail}`, 7);
-      }
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = pdfData.filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
       
-      yPosition += 1;
-      addCenteredText(`#${sale.transactionId}`, 9);
-      addCenteredText(formatDate(sale.saleDate), 7);
-      
-      // Add separator line
-      yPosition += 1;
-      doc.setLineWidth(0.1);
-      doc.line(margin, yPosition, pageWidth - margin, yPosition);
-      yPosition += 3;
-
-      // Customer info (if available)
-      if (sale.customer.name || sale.customer.phone) {
-        doc.setFontSize(7);
-        doc.setFont('courier', 'normal');
-        if (sale.customer.name) {
-          doc.text(`Customer: ${sale.customer.name}`, margin, yPosition);
-          yPosition += lineHeight;
-        }
-        if (sale.customer.phone) {
-          doc.text(`Phone: ${sale.customer.phone}`, margin, yPosition);
-          yPosition += lineHeight;
-        }
-        yPosition += 1;
-      }
-
-      // Items
-      doc.setFontSize(7);
-      doc.setFont('courier', 'bold');
-      doc.text('ITEMS:', margin, yPosition);
-      yPosition += lineHeight + 0.5;
-
-      sale.items.forEach(item => {
-        doc.setFont('courier', 'normal');
-        const productLine = `${item.productName} x${item.quantity}`;
-        const priceText = formatCurrency(item.total);
-        addLeftRightText(productLine, priceText, 7);
-      });
-
-      // Separator line
-      yPosition += 1;
-      doc.line(margin, yPosition, pageWidth - margin, yPosition);
-      yPosition += 3;
-
-      // Totals
-      doc.setFont('courier', 'normal');
-      addLeftRightText('Subtotal:', formatCurrency(sale.subtotal), 7);
-      
-      if (sale.discount > 0) {
-        addLeftRightText('Discount:', `-${formatCurrency(sale.discount)}`, 7);
-      }
-      
-      if (sale.tax > 0) {
-        addLeftRightText('Tax:', formatCurrency(sale.tax), 7);
-      }
-
-      // Total line separator
-      yPosition += 0.5;
-      doc.line(margin, yPosition, pageWidth - margin, yPosition);
-      yPosition += 2.5;
-
-      // Total (bold and larger)
-      doc.setFontSize(9);
-      doc.setFont('courier', 'bold');
-      addLeftRightText('TOTAL:', formatCurrency(sale.total), 9);
-
-      // Payment info
-      yPosition += 1;
-      doc.setFontSize(7);
-      doc.setFont('courier', 'normal');
-      addLeftRightText(`Paid (${sale.paymentMethod}):`, formatCurrency(sale.amountReceived), 7);
-      
-      if (sale.balance > 0) {
-        addLeftRightText('Change:', formatCurrency(sale.balance), 7);
-      }
-
-      // Footer separator
-      yPosition += 2;
-      doc.line(margin, yPosition, pageWidth - margin, yPosition);
-      yPosition += 3;
-
-      // Receipt footer message
-      const footerMessage = store?.settings?.receiptFooter || 'Thank you for your business!';
-      addCenteredText(footerMessage, 7);
-      addCenteredText('Please come again', 7);
-      
-      // IVMA branding
-      yPosition += 2;
-      doc.setFontSize(6);
-      doc.setFont('courier', 'normal');
-      addCenteredText('Powered by IVMA', 6);
-      addCenteredText('ivma.ng', 6);
-
-      // Save the PDF
-      doc.save(`Receipt_${sale.transactionId}_${new Date().toISOString().split('T')[0]}.pdf`);
-      
+      alert('Receipt PDF downloaded successfully with store branding!');
     } catch (error) {
       console.error('PDF generation failed:', error);
-      alert('PDF generation failed! Please try downloading as HTML instead.');
+      alert('PDF generation failed! Please try another format.');
     }
   };
 

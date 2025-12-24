@@ -4,6 +4,7 @@ import Inventory from '@/models/Inventory';
 import InventoryBatch from '@/models/InventoryBatch';
 import InventoryActivity from '@/models/InventoryActivity';
 import Notification from '@/models/Notification';
+import Store from '@/models/Store';
 import mongoose from 'mongoose';
 import { sendOrderProcessedEmail } from './email';
 
@@ -65,6 +66,54 @@ export class OrderSaleProcessor {
       }
 
       console.log(`Successfully processed ${createdSales.length} sale(s) for order ${order.orderNumber}`);
+
+      // Send email after transaction is committed successfully
+      if (order.customerSnapshot?.email && createdSales.length > 0) {
+        try {
+          const firstSellerId = Object.keys(sellerGroups)[0];
+          const store = await Store.getStoreByUser(new mongoose.Types.ObjectId(firstSellerId));
+          const storeName = store?.storeName || 'IVMA Store';
+          const storeLogoUrl = store?.branding?.logo || null; // ✅ Use branding.logo
+          const brandingColors = store?.branding ? {
+            primaryColor: store.branding.primaryColor,
+            secondaryColor: store.branding.secondaryColor
+          } : null;
+          
+          for (const sale of createdSales) {
+            await sendOrderProcessedEmail(
+              order.customerSnapshot.email,
+              {
+                orderNumber: order.orderNumber,
+                customer: {
+                  name: `${order.customerSnapshot.firstName} ${order.customerSnapshot.lastName}`,
+                  phone: order.customerSnapshot.phone || order.shippingAddress?.phone || '',
+                  email: order.customerSnapshot.email
+                }
+              },
+              {
+                transactionId: sale.transactionId,
+                items: sale.items,
+                total: sale.total,
+                subtotal: sale.subtotal,
+                discount: sale.discount || 0,
+                tax: sale.tax || 0,
+                saleDate: sale.saleDate,
+                paymentMethod: sale.paymentMethod,
+                linkedOrderId: sale.linkedOrderId || order._id
+              },
+              storeName,
+              storeLogoUrl,
+              brandingColors // ✅ Pass branding colors
+            );
+          }
+          
+          console.log('Order processed email sent successfully to:', order.customerSnapshot.email);
+        } catch (emailError) {
+          console.error('Failed to send order processed email:', emailError);
+        }
+      } else if (!order.customerSnapshot?.email) {
+        console.log('No customer email found, skipping email notification');
+      }
 
       return { 
         success: true, 
@@ -279,6 +328,8 @@ export class OrderSaleProcessor {
       }
     });
 
+    const weightedAverageCost = totalCost / orderItem.quantity;
+
     // Create ItemSale record if we have batch data
     let itemSale = null;
     if (batchesSoldFrom.length > 0) {
@@ -303,99 +354,26 @@ export class OrderSaleProcessor {
         quantitySold: orderItem.quantity,
         unitSalePrice: orderItem.price,
         totalSaleAmount: orderItem.subtotal,
-        unitCostPrice: totalCost / orderItem.quantity,
+        unitCostPrice: weightedAverageCost,
         totalCostAmount: totalCost,
         paymentMethod: this.mapPaymentMethod(order.paymentInfo.method),
         customer: {
           name: `${order.customerSnapshot.firstName} ${order.customerSnapshot.lastName}`,
-          phone: order.customerSnapshot.phone || order.shippingAddress.phone || '',
+          phone: order.customerSnapshot.phone || order.shippingAddress?.phone || '',
           email: order.customerSnapshot.email || ''
         },
         saleDate: new Date(),
-       
-      saleItem: {
-        inventoryId: orderItem.product,
-        itemSnapshot: itemSale.itemSnapshot,
-        quantity: orderItem.quantity,
-        unitPrice: orderItem.price,
-        totalPrice: orderItem.subtotal,
-        unitCost: weightedAverageCost,
-        totalCost: totalCost,
-        paymentMethod: this.mapPaymentMethod(order.paymentInfo.method),
+        status: 'completed',
+        soldBy: new mongoose.Types.ObjectId(sellerId),
+        saleLocation: 'Online Store',
+        notes: `Order delivery - #${order.orderNumber}`,
         isFromOrder: true,
         linkedOrderId: order._id,
         orderNumber: order.orderNumber
-      },
-      itemSale,
-      batchesUsed: batchesSoldFrom.length,
-      totalCost,
-      totalProfit: orderItem.subtotal - totalCost
-    });
+      });
 
-    if (order.customerSnapshot?.email) {
-                try {
-                  // Get store information for email
-                  const store = await Store.getStoreByUser(user._id);
-                  const storeName = store?.storeName || 'IVMA Store';
-                  
-                  // Send email for each sale created (usually just one, but could be multiple if multiple sellers)
-                  for (const sale of saleResults.sales) {
-                    await sendOrderProcessedEmail(
-                      order.customerSnapshot.email,
-                      {
-                        orderNumber: order.orderNumber,
-                        customer: {
-                          name: `${order.customerSnapshot.firstName} ${order.customerSnapshot.lastName}`,
-                          phone: order.customerSnapshot.phone || order.shippingAddress.phone || '',
-                          email: order.customerSnapshot.email
-                        }
-                      },
-                      {
-                        transactionId: sale.transactionId,
-                        items: sale.items,
-                        total: sale.total,
-                        subtotal: sale.subtotal,
-                        discount: sale.discount || 0,
-                        tax: sale.tax || 0,
-                        saleDate: sale.saleDate,
-                        paymentMethod: sale.paymentMethod
-                      },
-                      storeName
-                    );
-                  }
-                  
-                  console.log('Order processed email sent successfully');
-                } catch (emailError) {
-                  console.error('Failed to send order processed email:', emailError);
-                  // Don't fail the order processing if email fails
-                }
-              }
-  }
-  }
-
-  // static async mapPaymentMethod(method) {
-  //   const methodMap = {
-  //     'credit_card': 'Credit Card',
-  //     'paypal': 'PayPal',
-  //     'bank_transfer': 'Bank Transfer',
-  //     'cash_on_delivery',
-  //     totalCost,
-  //     totalProfit: orderItem.subtotal - totalCost
-  //   };
-  // }
-
-  static async mapPaymentMethod(method) {
-    const methodMap = {
-      'credit_card': 'Credit Card',
-      'paypal': 'PayPal',
-      'bank_transfer': 'Bank Transfer',
-      'cash_on_delivery': 'Cash on Delivery',
-      soldBy: new mongoose.Types.ObjectId(sellerId),
-      saleLocation: 'Online Store',
-      notes: `Order delivery - #${order.orderNumber}`
-    };
-
-    await itemSale.save({ session });
+      await itemSale.save({ session });
+    }
 
     // Create sale item for the main Sale record
     const saleItem = {
@@ -413,7 +391,13 @@ export class OrderSaleProcessor {
       }
     };
 
-    return { saleItem, itemSale };
+    return { 
+      saleItem, 
+      itemSale, 
+      batchesUsed: batchesSoldFrom.length,
+      totalCost,
+      totalProfit: orderItem.subtotal - totalCost
+    };
   }
 
   static mapPaymentMethod(orderPaymentMethod) {

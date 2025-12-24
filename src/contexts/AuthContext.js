@@ -20,25 +20,15 @@ export const AuthProvider = ({ children }) => {
 
   // Secure API call function for JSON requests
   const secureApiCall = async (url, options = {}) => {
-    const defaultOptions = {
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    };
-
-    const config = {
-      ...defaultOptions,
-      ...options,
-      headers: {
-        ...defaultOptions.headers,
-        ...options.headers,
-      },
-    };
-
     try {
-      const response = await fetch(url, config);
+      const response = await fetch(url, {
+        ...options,
+        signal: options.signal, // Pass through abort signal
+        headers: {
+          ...options.headers,
+          'Content-Type': 'application/json',
+        },
+      });
       
       if (response.status === 401) {
         // Unauthorized - clear user session but don't throw for auth endpoints
@@ -67,10 +57,12 @@ export const AuthProvider = ({ children }) => {
 
       return await response.json();
     } catch (error) {
-      // Only log non-auth errors
-      if (!url.includes('/auth/')) {
-        console.error('API call failed:', error);
+      // Don't log or throw AbortError - it's intentional
+      if (error.name === 'AbortError') {
+        return { success: false, aborted: true };
       }
+      
+      console.error('API call error:', error);
       throw error;
     }
   };
