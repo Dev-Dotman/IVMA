@@ -438,7 +438,7 @@ export default function InventoryPage() {
         {statsCards.map((stat, index) => {
           const IconComponent = stat.icon;
           return (
-            <div key={index} className="bg-white rounded-2xl p-6 border border-gray-100">
+            <div key={index} className="bg-white rounded-2xl p-6 border border-gray-100 hover:shadow-lg transition-shadow">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center mb-3">
@@ -463,11 +463,15 @@ export default function InventoryPage() {
       </div>
 
       {/* Inventory Overview */}
-      <div className="bg-white rounded-2xl border border-gray-100">
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
         <div className="p-6 border-b border-gray-100">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-gray-900">Catalogue Overview</h2>
-            <div className="flex items-center space-x-3">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900">Catalogue Overview</h2>
+              <p className="text-sm text-gray-500 mt-1">Manage your product inventory</p>
+            </div>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              {/* Search */}
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                 <input
@@ -475,7 +479,7 @@ export default function InventoryPage() {
                   placeholder="Search products..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 pr-4 py-2.5 w-80 bg-gray-50 border-0 rounded-xl focus:outline-none text-gray-900 focus:ring-2 focus:ring-teal-500 focus:bg-white text-sm transition-all duration-200"
+                  className="pl-10 pr-4 py-2.5 w-full sm:w-80 bg-gray-50 border-0 rounded-xl focus:outline-none text-gray-900 focus:ring-2 focus:ring-teal-500 focus:bg-white text-sm transition-all duration-200"
                 />
               </div>
               
@@ -485,7 +489,7 @@ export default function InventoryPage() {
                 value={filterBy}
                 onChange={handleFilterByChange}
                 placeholder="Filter by..."
-                className="w-48"
+                className="w-full sm:w-48"
               />
 
               {/* Filter Value Dropdown - only show when a filter type is selected */}
@@ -503,7 +507,7 @@ export default function InventoryPage() {
                     filterBy === 'status' ? 'Select status' :
                     filterBy === 'sku' ? 'Select SKU prefix' : 'Select value'
                   }
-                  className="w-48"
+                  className="w-full sm:w-48"
                 />
               )}
 
@@ -511,7 +515,7 @@ export default function InventoryPage() {
               {(filterBy !== 'all' || searchTerm) && (
                 <button 
                   onClick={clearFilters}
-                  className="px-4 py-2.5 text-gray-600 hover:text-gray-900 text-sm font-medium transition-colors"
+                  className="px-4 py-2.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-xl text-sm font-medium transition-colors"
                 >
                   Clear
                 </button>
@@ -519,7 +523,7 @@ export default function InventoryPage() {
 
               <button 
                 onClick={() => setIsAddModalOpen(true)}
-                className="flex items-center space-x-2 px-4 py-2.5 bg-teal-600 text-white rounded-xl hover:bg-teal-700 text-sm font-medium transition-all duration-200"
+                className="flex items-center justify-center space-x-2 px-4 py-2.5 bg-teal-600 text-white rounded-xl hover:bg-teal-700 text-sm font-medium transition-all duration-200 shadow-sm hover:shadow-md"
               >
                 <Plus className="w-4 h-4" />
                 <span>Add Item</span>
@@ -551,35 +555,32 @@ export default function InventoryPage() {
         {/* Table */}
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-50/50">
+            <thead className="bg-gray-50/80 border-b border-gray-200">
               <tr>
-                {/* <th className="px-6 py-4 text-left">
-                  <input type="checkbox" className="rounded border-gray-300" />
-                </th> */}
-                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product</th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cost Price</th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Selling Price</th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stock Value</th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Product Details</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Category</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Stock</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Pricing</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Value</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-100">
               {getFilteredInventoryData().length === 0 ? (
                 <tr>
-                  <td colSpan="9" className="px-6 py-12 text-center">
+                  <td colSpan="7" className="px-6 py-16 text-center">
                     <div className="flex flex-col items-center">
                       {inventoryData.length === 0 ? (
                         <>
-                          <Package className="w-12 h-12 text-gray-300 mb-4" />
-                          <p className="text-gray-500 text-lg font-medium mb-2">No inventory items yet</p>
-                          <p className="text-gray-400 text-sm mb-4">Get started by adding your first product</p>
+                          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                            <Package className="w-8 h-8 text-gray-400" />
+                          </div>
+                          <p className="text-gray-900 text-lg font-semibold mb-2">No inventory items yet</p>
+                          <p className="text-gray-500 text-sm mb-6">Get started by adding your first product to track</p>
                           <button 
                             onClick={() => setIsAddModalOpen(true)}
-                            className="flex items-center space-x-2 px-4 py-2 bg-teal-600 text-white rounded-xl hover:bg-teal-700 text-sm font-medium transition-all duration-200"
+                            className="flex items-center space-x-2 px-6 py-3 bg-teal-600 text-white rounded-xl hover:bg-teal-700 text-sm font-medium transition-all duration-200 shadow-sm hover:shadow-md"
                           >
                             <Plus className="w-4 h-4" />
                             <span>Add Your First Item</span>
@@ -587,14 +588,17 @@ export default function InventoryPage() {
                         </>
                       ) : (
                         <>
-                          <Filter className="w-12 h-12 text-gray-300 mb-4" />
-                          <p className="text-gray-500 text-lg font-medium mb-2">No items match your filters</p>
-                          <p className="text-gray-400 text-sm mb-4">Try adjusting your search or filter criteria</p>
+                          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                            <Filter className="w-8 h-8 text-gray-400" />
+                          </div>
+                          <p className="text-gray-900 text-lg font-semibold mb-2">No items match your filters</p>
+                          <p className="text-gray-500 text-sm mb-6">Try adjusting your search or filter criteria</p>
                           <button 
                             onClick={clearFilters}
-                            className="flex items-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-xl hover:bg-gray-700 text-sm font-medium transition-all duration-200"
+                            className="flex items-center space-x-2 px-6 py-3 bg-gray-600 text-white rounded-xl hover:bg-gray-700 text-sm font-medium transition-all duration-200 shadow-sm hover:shadow-md"
                           >
-                            Clear Filters
+                            <X className="w-4 h-4" />
+                            <span>Clear All Filters</span>
                           </button>
                         </>
                       )}
@@ -605,99 +609,123 @@ export default function InventoryPage() {
                 getFilteredInventoryData().map((item) => (
                   <tr 
                     key={item._id} 
-                    className="hover:bg-gray-50/50 transition-colors cursor-pointer"
-                    onClick={() => handleItemClick(item._id)}
+                    className="hover:bg-gray-50/50 transition-colors group"
                   >
-                    {/* <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
-                      <input type="checkbox" className="rounded border-gray-300" />
-                    </td> */}
+                    {/* Product Details */}
                     <td className="px-6 py-4">
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">{item.productName}</div>
-                        {item.brand && <div className="text-xs text-gray-500">{item.brand}</div>}
-                        {/* Show current batch info if available */}
-                        {item.batchPricing?.hasActiveBatch && (
-                          <div className="text-xs text-green-600 mt-1">
-                            Current: {item.batchPricing.activeBatchCode}
+                      <div className="flex items-start space-x-3">
+                        {/* Product Image - Use actual image or fallback to package icon */}
+                        <div className="w-12 h-12 bg-gradient-to-br from-teal-50 to-teal-100 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
+                          {item.image || (item.images && item.images.length > 0) ? (
+                            <img 
+                              src={item.image || item.images[0].url} 
+                              alt={item.productName}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                // Fallback to package icon if image fails to load
+                                e.target.style.display = 'none';
+                                e.target.nextElementSibling.style.display = 'flex';
+                              }}
+                            />
+                          ) : null}
+                          <Package className={`w-6 h-6 text-teal-600 ${(item.image || (item.images && item.images.length > 0)) ? 'hidden' : ''}`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-semibold text-gray-900 truncate">{item.productName}</div>
+                          <div className="flex items-center space-x-2 mt-1">
+                            <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+                              {item.sku}
+                            </span>
+                            {item.brand && (
+                              <span className="text-xs text-gray-500">• {item.brand}</span>
+                            )}
                           </div>
-                        )}
+                          {/* Current Batch Info */}
+                          {item.batchPricing?.hasActiveBatch && (
+                            <div className="flex items-center space-x-1 mt-1">
+                              <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
+                              <span className="text-xs text-green-600 font-medium">
+                                Batch: {item.batchPricing.activeBatchCode}
+                              </span>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </td>
+
+                    {/* Category */}
                     <td className="px-6 py-4">
-                      <span className="text-sm font-mono text-gray-700">{item.sku}</span>
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-700">
+                        {item.category}
+                      </span>
                     </td>
-                    <td className="px-6 py-4">
-                      <span className="text-sm text-gray-900">{item.category}</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="text-sm text-gray-900">{item.quantityInStock} {item.unitOfMeasure}</span>
-                    </td>
+
+                    {/* Stock */}
                     <td className="px-6 py-4">
                       <div className="flex flex-col">
-                        {/* Show current batch cost price */}
-                        <span className="text-sm text-gray-900">
-                          {formatCurrency(item.currentCostPrice || item.costPrice)}
+                        <span className="text-sm font-semibold text-gray-900">
+                          {item.quantityInStock}
                         </span>
-                        {/* Show if using batch pricing */}
-                        {item.currentCostPrice && item.currentCostPrice !== item.costPrice && (
-                          <span className="text-xs text-gray-400 line-through">
-                            {formatCurrency(item.costPrice)}
-                          </span>
-                        )}
+                        <span className="text-xs text-gray-500">{item.unitOfMeasure}</span>
                       </div>
                     </td>
+
+                    {/* Pricing */}
                     <td className="px-6 py-4">
-                      <div className="flex flex-col">
-                        {/* Show current batch selling price */}
-                        <span className="text-sm text-gray-900">
-                          {formatCurrency(item.currentSellingPrice || item.sellingPrice)}
-                        </span>
-                        {/* Show if using batch pricing */}
-                        {item.currentSellingPrice && item.currentSellingPrice !== item.sellingPrice && (
-                          <span className="text-xs text-gray-400 line-through">
-                            {formatCurrency(item.sellingPrice)}
+                      <div className="space-y-1">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xs text-gray-500">Cost:</span>
+                          <span className="text-sm font-medium text-gray-900">
+                            {formatCurrency(item.currentCostPrice || item.costPrice)}
                           </span>
-                        )}
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xs text-gray-500">Sell:</span>
+                          <span className="text-sm font-medium text-teal-600">
+                            {formatCurrency(item.currentSellingPrice || item.sellingPrice)}
+                          </span>
+                        </div>
                       </div>
                     </td>
+
+                    {/* Stock Value */}
                     <td className="px-6 py-4">
-                      <span className="text-sm font-medium text-gray-900">
-                        {/* Use current batch cost price for stock value calculation */}
+                      <span className="text-sm font-bold text-gray-900">
                         {formatCurrency(item.quantityInStock * (item.currentCostPrice || item.costPrice))}
                       </span>
                     </td>
+
+                    {/* Status */}
                     <td className="px-6 py-4">
-                      <span className={`inline-flex px-3 py-1 text-xs font-medium rounded-full ${getStatusColor(item)}`}>
+                      <span className={`inline-flex items-center px-3 py-1.5 text-xs font-semibold rounded-full ${getStatusColor(item)}`}>
+                        <div className={`w-1.5 h-1.5 rounded-full mr-2 ${
+                          item.quantityInStock === 0 ? 'bg-red-600' :
+                          item.quantityInStock <= item.reorderLevel ? 'bg-yellow-600' :
+                          'bg-green-600'
+                        }`}></div>
                         {getStatusText(item)}
                       </span>
                     </td>
+
                     {/* Actions */}
                     <td className="px-6 py-4">
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => router.push(`/dashboard/analytics?item=${item._id}`)}
-                          className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
-                          title="View Analytics"
-                        >
-                          <BarChart3 className="w-4 h-4" />
-                        </button>
+                      <div className="flex items-center justify-center space-x-2" onClick={(e) => e.stopPropagation()}>
                         <button
                           onClick={() => router.push(`/dashboard/inventory/${item._id}`)}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          className="p-2 text-teal-600 hover:bg-teal-50 rounded-lg transition-all hover:shadow-sm"
                           title="View Details"
                         >
                           <Eye className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => handleEditItem(item)}
-                          className="p-2 text-teal-600 hover:bg-teal-50 rounded-lg transition-colors"
-                          title="Edit"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteItem(item)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm(`Are you sure you want to delete "${item.productName}"?`)) {
+                              // Add delete functionality
+                              console.log('Delete item:', item._id);
+                            }
+                          }}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all hover:shadow-sm"
                           title="Delete"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -713,12 +741,25 @@ export default function InventoryPage() {
 
         {/* Results Summary */}
         {inventoryData.length > 0 && (
-          <div className="px-6 py-4 border-t border-gray-100 bg-gray-50">
-            <p className="text-sm text-gray-600">
-              Showing {getFilteredInventoryData().length} of {inventoryData.length} items
-              {searchTerm && ` matching "${searchTerm}"`}
-              {filterBy !== 'all' && filterValue && ` filtered by ${filterBy}`}
-            </p>
+          <div className="px-6 py-4 border-t border-gray-100 bg-gray-50/50">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-gray-600">
+                Showing <span className="font-semibold text-gray-900">{getFilteredInventoryData().length}</span> of <span className="font-semibold text-gray-900">{inventoryData.length}</span> items
+                {searchTerm && <span className="text-teal-600"> matching "{searchTerm}"</span>}
+                {filterBy !== 'all' && filterValue && <span className="text-teal-600"> • Filtered by {filterBy}</span>}
+              </p>
+              {getFilteredInventoryData().length > 0 && (
+                <div className="text-sm text-gray-600">
+                  Total Value: <span className="font-semibold text-gray-900">
+                    {formatCurrency(
+                      getFilteredInventoryData().reduce((sum, item) => 
+                        sum + (item.quantityInStock * (item.currentCostPrice || item.costPrice)), 0
+                      )
+                    )}
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

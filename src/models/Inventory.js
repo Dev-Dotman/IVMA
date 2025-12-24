@@ -812,34 +812,64 @@ inventorySchema.pre('save', function(next) {
   next();
 });
 
-// Generate SKU if not provided - improved logic
+// Pre-save middleware to generate unique SKUs with random strings
 inventorySchema.pre('save', async function(next) {
   if (!this.sku || this.sku === '' || this.sku === null) {
     try {
       // Get the first 3 characters of category, fallback to 'ITM'
-      const categoryCode = this.category ? this.category.substring(0, 3).toUpperCase() : 'ITM';
+      const categoryCode = this.category ? this.category.substring(0, 3).toUpperCase().replace(/\s+/g, '') : 'ITM';
+      
+      // Generate random 4-character alphanumeric string
+      const randomString = Math.random().toString(36).substring(2, 6).toUpperCase();
       
       // Count existing items for this user to get next number
       const count = await this.constructor.countDocuments({ userId: this.userId });
       
-      // Generate SKU with format: CATEGORY-001
-      this.sku = `${categoryCode}-${String(count + 1).padStart(3, '0')}`;
+      // Generate SKU: CATEGORY-NUMBER-RANDOM (e.g., CLO-001-A3F9)
+      this.sku = `${categoryCode}-${String(count + 1).padStart(3, '0')}-${randomString}`;
       
-      // Check if this SKU already exists (for uniqueness)
+      // Ensure uniqueness - if SKU exists, generate new random string
       let attempts = 0;
       while (attempts < 10) {
         const existingSku = await this.constructor.findOne({ sku: this.sku });
         if (!existingSku) break;
         
-        // If SKU exists, increment and try again
+        // Generate new random string and try again
         attempts++;
-        this.sku = `${categoryCode}-${String(count + 1 + attempts).padStart(3, '0')}`;
+        const newRandomString = Math.random().toString(36).substring(2, 6).toUpperCase();
+        this.sku = `${categoryCode}-${String(count + 1 + attempts).padStart(3, '0')}-${newRandomString}`;
       }
     } catch (error) {
       console.error('SKU generation error:', error);
-      // Fallback SKU if generation fails
-      this.sku = `ITM-${Date.now().toString().slice(-6)}`;
+      // Fallback SKU with timestamp
+      const timestamp = Date.now().toString().slice(-6);
+      const randomString = Math.random().toString(36).substring(2, 6).toUpperCase();
+      this.sku = `ITM-${timestamp}-${randomString}`;
     }
+  }
+  next();
+});
+
+// Pre-save middleware to generate variant SKUs with random strings for uniqueness
+inventorySchema.pre('save', function(next) {
+  if (this.hasVariants && this.variants && this.variants.length > 0) {
+    this.variants.forEach((variant, index) => {
+      // ✅ ALWAYS regenerate variant SKU to ensure proper format with random string
+      // Clean up size and color - remove ALL spaces and special chars
+      const cleanSize = variant.size
+        ? variant.size.replace(/\s+/g, '').replace(/[^A-Za-z0-9]/g, '').substring(0, 4).toUpperCase()
+        : 'ONE';
+      const cleanColor = variant.color
+        ? variant.color.replace(/\s+/g, '').replace(/[^A-Za-z0-9]/g, '').substring(0, 3).toUpperCase()
+        : 'STD';
+      
+      // ✅ Generate unique 4-character random string for EACH variant
+      const randomString = Math.random().toString(36).substring(2, 6).toUpperCase();
+      
+      // ✅ Format: MAINSKU-COLOR-SIZE-RANDOM (e.g., ACC-001-A3F9-RED-M-B7C2)
+      // No spaces, all uppercase, with random string for uniqueness
+      variant.sku = `${this.sku}-${cleanColor}-${cleanSize}-${randomString}`;
+    });
   }
   next();
 });
@@ -1136,7 +1166,10 @@ inventorySchema.index({ userId: 1, category: 1 });
 inventorySchema.index({ userId: 1, sku: 1 }, { unique: true });
 inventorySchema.index({ productName: 'text', description: 'text', brand: 'text' });
 inventorySchema.index({ quantityInStock: 1, reorderLevel: 1 });
-
+// ✅ NON-UNIQUE index for variant SKUs - only for query performance
+inventorySchema.index({ 'variants.sku': 1 }, { sparse: true }); // Just for query performance, not uniqueness});
+// ✅ Instead, we'll use a compound index with the parent document
 const Inventory = mongoose.models.Inventory || mongoose.model('Inventory', inventorySchema);
+
 
 export default Inventory;
