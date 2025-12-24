@@ -91,7 +91,7 @@ export const generateReceiptPDF = async (orderData, saleData, storeName = 'IVMA 
 
     addWatermark();
     addDashedBorder();
-    addCornerDecorations();
+    // addCornerDecorations();
 
     doc.setFont('courier', 'normal');
     
