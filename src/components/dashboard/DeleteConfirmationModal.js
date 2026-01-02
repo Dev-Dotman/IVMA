@@ -12,6 +12,17 @@ export default function DeleteConfirmationModal({
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
 
+  const quickReasons = [
+    'No longer selling this product',
+    'Product discontinued',
+    'Out of stock permanently',
+    'Replaced by newer version',
+    'Low demand',
+    'Seasonal item - season ended',
+    'Duplicate entry',
+    'Supplier stopped production'
+  ];
+
   if (!isOpen || !item) return null;
 
   const handleConfirm = async () => {
@@ -40,9 +51,9 @@ export default function DeleteConfirmationModal({
 
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden">
+      <div className="bg-white rounded-2xl w-full max-w-md max-h-[95vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-red-100 rounded-xl">
               <AlertTriangle className="w-6 h-6 text-red-600" />
@@ -63,7 +74,7 @@ export default function DeleteConfirmationModal({
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-4">
+        <div className="p-6 space-y-4 overflow-y-auto flex-1">
           {/* Warning */}
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
             <div className="flex items-start space-x-3">
@@ -105,6 +116,32 @@ export default function DeleteConfirmationModal({
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Reason for deletion *
             </label>
+            
+            {/* Quick Reason Pills */}
+            <div className="mb-3">
+              <p className="text-xs text-gray-500 mb-2">Quick select:</p>
+              <div className="flex flex-wrap gap-2">
+                {quickReasons.map((quickReason, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    onClick={() => {
+                      setReason(quickReason);
+                      setError('');
+                    }}
+                    disabled={isDeleting}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                      reason === quickReason
+                        ? 'bg-red-100 text-red-700 border border-red-300'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200'
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    {quickReason}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <textarea
               value={reason}
               onChange={(e) => {
@@ -123,7 +160,7 @@ export default function DeleteConfirmationModal({
         </div>
 
         {/* Footer */}
-        <div className="border-t border-gray-200 p-6 bg-gray-50">
+        <div className="border-t border-gray-200 p-6 bg-gray-50 flex-shrink-0">
           <div className="flex items-center justify-end space-x-4">
             <button
               type="button"
