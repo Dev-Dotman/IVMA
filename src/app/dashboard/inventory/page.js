@@ -5,6 +5,7 @@ import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import AddInventoryModal from "@/components/dashboard/AddInventoryModal";
 import EditInventoryModal from "@/components/dashboard/EditInventoryModal";
 import StockUpdateModal from "@/components/dashboard/StockUpdateModal";
+import DeleteConfirmationModal from "@/components/dashboard/DeleteConfirmationModal";
 import CustomDropdown from "@/components/ui/CustomDropdown";
 import { useInventoryData } from "@/hooks/useInventoryData";
 import { 
@@ -32,8 +33,10 @@ export default function InventoryPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isStockModalOpen, setIsStockModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [selectedStockItem, setSelectedStockItem] = useState(null);
+  const [itemToDelete, setItemToDelete] = useState(null);
 
   // Use TanStack Query for data fetching
   const {
@@ -43,9 +46,11 @@ export default function InventoryPage() {
     addItem,
     editItem,
     updateStock,
+    deleteItem,
     isAddingItem,
     isEditingItem,
     isUpdatingStock,
+    isDeletingItem,
     statsError,
     isLoadingStats,
   } = useInventoryData();
@@ -189,6 +194,26 @@ export default function InventoryPage() {
   const closeStockModal = () => {
     setIsStockModalOpen(false);
     setSelectedStockItem(null);
+  };
+
+  const openDeleteModal = (item) => {
+    setItemToDelete(item);
+    setIsDeleteModalOpen(true);
+  };
+
+  const closeDeleteModal = () => {
+    setIsDeleteModalOpen(false);
+    setItemToDelete(null);
+  };
+
+  const handleDeleteItem = async (reason) => {
+    try {
+      await deleteItem({ itemId: itemToDelete._id, reason });
+      closeDeleteModal();
+    } catch (error) {
+      console.error('Error deleting item:', error);
+      throw error;
+    }
   };
 
   // Filter options
@@ -720,10 +745,7 @@ export default function InventoryPage() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (confirm(`Are you sure you want to delete "${item.productName}"?`)) {
-                              // Add delete functionality
-                              console.log('Delete item:', item._id);
-                            }
+                            openDeleteModal(item);
                           }}
                           className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all hover:shadow-sm"
                           title="Delete"
@@ -785,6 +807,15 @@ export default function InventoryPage() {
         onClose={closeStockModal}
         onSubmit={handleStockUpdate}
         item={selectedStockItem}
+      />
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmationModal
+        isOpen={isDeleteModalOpen}
+        onClose={closeDeleteModal}
+        onConfirm={handleDeleteItem}
+        item={itemToDelete}
+        isDeleting={isDeletingItem}
       />
     </DashboardLayout>
   );

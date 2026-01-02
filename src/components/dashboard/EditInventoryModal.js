@@ -1,12 +1,17 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
-import { X, Package, Tag, DollarSign, Upload, Image as ImageIcon } from "lucide-react";
+import { X, Package, Tag, DollarSign } from "lucide-react";
 import CustomDropdown from "../ui/CustomDropdown";
 import { useAuth } from "@/contexts/AuthContext";
 
+// Import modular components
+import ImageUploadSection from "./Inventory/ImageUploadSection";
+import VariantManager from "./Inventory/VariantManager";
+import CategoryDetailsRenderer from "./Inventory/Categories/CategoryDetailsRenderer";
+
 export default function EditInventoryModal({ isOpen, onClose, onSubmit, item }) {
-  const { secureFormDataCall } = useAuth();
-  const fileInputRef = useRef(null);
+  const { secureFormDataCall, secureApiCall } = useAuth();
+  const multiImageInputRef = useRef(null);
   
   const [formData, setFormData] = useState({
     productName: '',
@@ -23,7 +28,9 @@ export default function EditInventoryModal({ isOpen, onClose, onSubmit, item }) 
     qrCode: '',
     notes: '',
     tags: [],
-    // Category-specific details
+    hasVariants: false,
+    variants: [],
+    images: [],
     clothingDetails: null,
     shoesDetails: null,
     accessoriesDetails: null,
@@ -39,10 +46,21 @@ export default function EditInventoryModal({ isOpen, onClose, onSubmit, item }) 
   });
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedImage, setSelectedImage] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
-  const [currentImage, setCurrentImage] = useState(null);
+  const [selectedImages, setSelectedImages] = useState([]);
+  const [imagePreviews, setImagePreviews] = useState([]);
+  const [existingImages, setExistingImages] = useState([]);
+  const [detectedColorVariants, setDetectedColorVariants] = useState([]);
+  const [variants, setVariants] = useState([]);
+  const [selectedStateForCity, setSelectedStateForCity] = useState('');
+  
+  // Batch tracking state - current active batch (FIFO)
+  const [activeBatch, setActiveBatch] = useState(null);
+  const [isLoadingBatch, setIsLoadingBatch] = useState(false);
+  const [batchUpdated, setBatchUpdated] = useState(false);
+  
+  // Tab state
+  const [activeTab, setActiveTab] = useState('basic');
 
   const unitOptions = [
     { value: 'Piece', label: 'Piece' },
@@ -87,9 +105,41 @@ export default function EditInventoryModal({ isOpen, onClose, onSubmit, item }) 
     { value: 'Featured', label: 'Featured' }
   ];
 
+  const NIGERIAN_STATES = {
+    'Lagos': ['Ikeja', 'Lagos Island', 'Lekki', 'Ikorodu', 'Epe', 'Badagry', 'Victoria Island', 'Yaba', 'Surulere', 'Ajah'],
+    'Abuja': ['Central Area', 'Garki', 'Wuse', 'Maitama', 'Asokoro', 'Gwarinpa', 'Kubwa', 'Lugbe'],
+    'Oyo': ['Ibadan', 'Ogbomoso', 'Oyo', 'Iseyin'],
+    'Ogun': ['Abeokuta', 'Ijebu-Ode', 'Sagamu', 'Ota'],
+    'Rivers': ['Port Harcourt', 'Obio-Akpor', 'Bonny', 'Eleme'],
+    'Kano': ['Kano', 'Wudil', 'Bichi', 'Gwarzo'],
+  };
+
+  const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+
+  // Fetch current active batch for the item (FIFO - oldest active batch with stock)
+  const fetchActiveBatch = async (productId) => {
+    setIsLoadingBatch(true);
+    try {
+      const response = await secureApiCall(`/api/inventory/${productId}/batches?active=true`);
+      if (response.success && response.batches && response.batches.length > 0) {
+        setActiveBatch(response.batches[0]);
+      } else {
+        setActiveBatch(null);
+      }
+    } catch (error) {
+      console.error('Failed to fetch active batch:', error);
+      setActiveBatch(null);
+    } finally {
+      setIsLoadingBatch(false);
+    }
+  };
+
   // Populate form when item changes
   useEffect(() => {
     if (item && isOpen) {
+      // Transform existing variants to new format
+      const transformedVariants = transformExistingVariants(item.variants || []);
+      
       setFormData({
         productName: item.productName || '',
         category: item.category || '',
@@ -105,7 +155,9 @@ export default function EditInventoryModal({ isOpen, onClose, onSubmit, item }) 
         qrCode: item.qrCode || '',
         notes: item.notes || '',
         tags: item.tags || [],
-        // Category-specific details - preserve exactly as-is from database
+        hasVariants: item.hasVariants || false,
+        variants: item.variants || [],
+        images: item.images || [],
         clothingDetails: item.clothingDetails || null,
         shoesDetails: item.shoesDetails || null,
         accessoriesDetails: item.accessoriesDetails || null,
@@ -120,168 +172,147 @@ export default function EditInventoryModal({ isOpen, onClose, onSubmit, item }) 
         healthBeautyDetails: item.healthBeautyDetails || null
       });
       
-      // Set current image
-      setCurrentImage(item.image || null);
-      setImagePreview(null);
-      setSelectedImage(null);
+      // Set existing images
+      const existingImgs = (item.images || []).map(img => ({
+        url: typeof img === 'string' ? img : img.url,
+        colorTag: typeof img === 'object' ? img.colorTag : '',
+        isPrimary: typeof img === 'object' ? img.isPrimary : false,
+        existing: true
+      }));
+      setExistingImages(existingImgs);
+      setImagePreviews(existingImgs);
+      
+      // Set variants in new format
+      setVariants(transformedVariants);
+      
+      // Detect color variants
+      const colors = transformedVariants.map(v => v.color);
+      setDetectedColorVariants(colors);
+      
+      setSelectedImages([]);
       setErrors({});
+      
+      // Fetch current active batch (FIFO)
+      fetchActiveBatch(item._id);
     }
   }, [item, isOpen]);
+
+  // Transform existing variants from database format to UI format
+  const transformExistingVariants = (dbVariants) => {
+    if (!dbVariants || dbVariants.length === 0) return [];
+    
+    // Group variants by color
+    const colorGroups = dbVariants.reduce((groups, variant) => {
+      const color = variant.color;
+      if (!groups[color]) {
+        groups[color] = {
+          color: color,
+          sizes: []
+        };
+      }
+      
+      groups[color].sizes.push({
+        size: variant.size,
+        quantityInStock: variant.quantityInStock || 0,
+        reorderLevel: variant.reorderLevel || 5,
+        sku: variant.sku || ''
+      });
+      
+      return groups;
+    }, {});
+    
+    return Object.values(colorGroups);
+  };
+
+  // Delivery location handlers (same as AddInventoryModal)
+  const addDeliveryState = (category) => {
+    if (!selectedStateForCity) return;
+    
+    const stateExists = formData[`${category}Details`]?.deliveryLocations.states.some(
+      s => s.stateName === selectedStateForCity
+    );
+    
+    if (stateExists) {
+      alert('This state is already added');
+      return;
+    }
+
+    handleCategoryDetailChange(category, 'deliveryLocations', {
+      ...formData[`${category}Details`].deliveryLocations,
+      states: [
+        ...formData[`${category}Details`].deliveryLocations.states,
+        {
+          stateName: selectedStateForCity,
+          cities: [],
+          coverAllCities: false
+        }
+      ]
+    });
+    setSelectedStateForCity('');
+  };
+
+  const removeDeliveryState = (category, stateName) => {
+    handleCategoryDetailChange(category, 'deliveryLocations', {
+      ...formData[`${category}Details`].deliveryLocations,
+      states: formData[`${category}Details`].deliveryLocations.states.filter(s => s.stateName !== stateName)
+    });
+  };
+
+  const toggleCoverAllCitiesInState = (category, stateName) => {
+    const updatedStates = formData[`${category}Details`].deliveryLocations.states.map(state => 
+      state.stateName === stateName
+        ? { ...state, coverAllCities: !state.coverAllCities, cities: [] }
+        : state
+    );
+    
+    handleCategoryDetailChange(category, 'deliveryLocations', {
+      ...formData[`${category}Details`].deliveryLocations,
+      states: updatedStates
+    });
+  };
+
+  const addCityToDeliveryState = (category, stateName, city) => {
+    const updatedStates = formData[`${category}Details`].deliveryLocations.states.map(state => 
+      state.stateName === stateName
+        ? {
+            ...state,
+            cities: state.cities.includes(city)
+              ? state.cities
+              : [...state.cities, city]
+          }
+        : state
+    );
+    
+    handleCategoryDetailChange(category, 'deliveryLocations', {
+      ...formData[`${category}Details`].deliveryLocations,
+      states: updatedStates
+    });
+  };
+
+  const removeCityFromDeliveryState = (category, stateName, city) => {
+    const updatedStates = formData[`${category}Details`].deliveryLocations.states.map(state => 
+      state.stateName === stateName
+        ? { ...state, cities: state.cities.filter(c => c !== city) }
+        : state
+    );
+    
+    handleCategoryDetailChange(category, 'deliveryLocations', {
+      ...formData[`${category}Details`].deliveryLocations,
+      states: updatedStates
+    });
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+    if (errors[name]) {
+      setErrors(prev => ({ ...prev, [name]: '' }));
+    }
+  };
 
   // Handle category change - DON'T initialize if data already exists
   const handleCategoryChange = (value) => {
     handleChange({ target: { name: 'category', value } });
-    
-    // Only initialize category-specific details if they don't already exist
-    // This prevents overwriting existing data when editing
-    const newFormData = { ...formData, category: value };
-    
-    // Only initialize if switching to a NEW category that doesn't have details yet
-    if (value === 'Food' && !formData.foodDetails) {
-      newFormData.foodDetails = {
-        foodType: '',
-        cuisineType: [],
-        servingSize: '',
-        ingredients: [],
-        allergens: [],
-        spiceLevel: '',
-        deliveryLocations: { states: [] },
-        orderingHours: DAYS.map(day => ({
-          day,
-          isAvailable: true,
-          startTime: '09:00',
-          endTime: '21:00'
-        })),
-        deliveryTime: { value: 30, unit: 'minutes' },
-        maxOrdersPerDay: ''
-      };
-    } else if (value === 'Beverages' && !formData.beveragesDetails) {
-      newFormData.beveragesDetails = {
-        beverageType: '',
-        volume: '',
-        packaging: '',
-        ingredients: [],
-        isAlcoholic: false,
-        alcoholContent: '',
-        isCarbonated: false,
-        flavorProfile: [],
-        deliveryLocations: { states: [] },
-        orderingHours: DAYS.map(day => ({
-          day,
-          isAvailable: true,
-          startTime: '09:00',
-          endTime: '21:00'
-        })),
-        deliveryTime: { value: 30, unit: 'minutes' },
-        maxOrdersPerDay: ''
-      };
-    } else if (value === 'Clothing' && !formData.clothingDetails) {
-      newFormData.clothingDetails = {
-        gender: 'Unisex',
-        productType: '',
-        sizes: [],
-        colors: [],
-        material: '',
-        style: [],
-        occasion: []
-      };
-    } else if (value === 'Shoes' && !formData.shoesDetails) {
-      newFormData.shoesDetails = {
-        gender: 'Unisex',
-        shoeType: '',
-        sizes: [],
-        colors: [],
-        material: '',
-        occasion: []
-      };
-    } else if (value === 'Accessories' && !formData.accessoriesDetails) {
-      newFormData.accessoriesDetails = {
-        accessoryType: '',
-        gender: 'Unisex',
-        colors: [],
-        material: ''
-      };
-    } else if (value === 'Perfumes' && !formData.perfumeDetails) {
-      newFormData.perfumeDetails = {
-        fragranceType: '',
-        gender: 'Unisex',
-        volume: '',
-        scentFamily: '',
-        concentration: '',
-        occasion: []
-      };
-    } else if (value === 'Electronics' && !formData.electronicsDetails) {
-      newFormData.electronicsDetails = {
-        productType: '',
-        brand: '',
-        model: '',
-        specifications: {},
-        condition: 'New',
-        warranty: { hasWarranty: false, duration: '', type: '' },
-        colors: [],
-        connectivity: []
-      };
-    } else if (value === 'Books' && !formData.booksDetails) {
-      newFormData.booksDetails = {
-        bookType: '',
-        author: '',
-        publisher: '',
-        isbn: '',
-        publicationYear: null,
-        language: 'English',
-        pages: null,
-        format: 'Paperback',
-        condition: 'New',
-        genre: []
-      };
-    } else if (value === 'Home & Garden' && !formData.homeGardenDetails) {
-      newFormData.homeGardenDetails = {
-        productType: '',
-        room: [],
-        material: '',
-        dimensions: { length: '', width: '', height: '', weight: '' },
-        color: [],
-        assemblyRequired: false,
-        careInstructions: ''
-      };
-    } else if (value === 'Sports' && !formData.sportsDetails) {
-      newFormData.sportsDetails = {
-        sportType: '',
-        productType: '',
-        brand: '',
-        sizes: [],
-        colors: [],
-        material: '',
-        suitableFor: [],
-        performanceLevel: 'All Levels'
-      };
-    } else if (value === 'Automotive' && !formData.automotiveDetails) {
-      newFormData.automotiveDetails = {
-        productType: '',
-        compatibleVehicles: [],
-        brand: '',
-        partNumber: '',
-        condition: 'New',
-        warranty: { hasWarranty: false, duration: '' },
-        specifications: ''
-      };
-    } else if (value === 'Health & Beauty' && !formData.healthBeautyDetails) {
-      newFormData.healthBeautyDetails = {
-        productType: '',
-        brand: '',
-        skinType: [],
-        ingredients: [],
-        suitableFor: [],
-        volume: '',
-        scent: '',
-        benefits: [],
-        applicationArea: [],
-        isOrganic: false,
-        expiryDate: null
-      };
-    }
-    
-    setFormData(newFormData);
   };
 
   // Handle category-specific detail changes
@@ -316,7 +347,6 @@ export default function EditInventoryModal({ isOpen, onClose, onSubmit, item }) 
     }));
   };
 
-  // Handle tags
   const toggleTag = (tag) => {
     setFormData(prev => ({
       ...prev,
@@ -326,72 +356,195 @@ export default function EditInventoryModal({ isOpen, onClose, onSubmit, item }) 
     }));
   };
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+  // Image handling
+  const handleMultiImageSelect = (e) => {
+    const files = Array.from(e.target.files);
     
-    // Clear error when user starts typing
-    if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: '' }));
+    if (imagePreviews.length + files.length > 10) {
+      setErrors(prev => ({ ...prev, images: 'Maximum 10 images allowed' }));
+      return;
     }
-  };
 
-  const handleImageSelect = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      // Validate file
+    const validFiles = files.filter(file => {
       const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-      const maxSize = 5 * 1024 * 1024; // 5MB
+      const maxSize = 5 * 1024 * 1024;
+      return allowedTypes.includes(file.type) && file.size <= maxSize;
+    });
 
-      if (!allowedTypes.includes(file.type)) {
-        setErrors(prev => ({ ...prev, image: 'Only JPEG, PNG, and WebP images are allowed' }));
-        return;
-      }
+    if (validFiles.length !== files.length) {
+      setErrors(prev => ({ ...prev, images: 'Some files were invalid (max 5MB, JPEG/PNG/WebP only)' }));
+    }
 
-      if (file.size > maxSize) {
-        setErrors(prev => ({ ...prev, image: 'Image size must be less than 5MB' }));
-        return;
-      }
+    setSelectedImages(prev => [...prev, ...validFiles]);
 
-      setSelectedImage(file);
-      setErrors(prev => ({ ...prev, image: '' }));
-
-      // Create preview
+    validFiles.forEach((file, index) => {
       const reader = new FileReader();
       reader.onload = (e) => {
-        setImagePreview(e.target.result);
+        setImagePreviews(prev => {
+          const existingCount = prev.filter(p => p.existing).length;
+          const newPreviews = [...prev, {
+            url: e.target.result,
+            file: file,
+            colorTag: '',
+            isPrimary: prev.length === 0 && index === 0,
+            existing: false
+          }];
+          return newPreviews;
+        });
       };
       reader.readAsDataURL(file);
+    });
+
+    setErrors(prev => ({ ...prev, images: '' }));
+  };
+
+  const removeMultiImage = (index) => {
+    const imageToRemove = imagePreviews[index];
+    
+    if (imageToRemove.existing) {
+      // Remove from existing images
+      setExistingImages(prev => prev.filter((_, i) => i !== index));
+    } else {
+      // Remove from new images
+      const newImageIndex = imagePreviews.slice(0, index).filter(img => !img.existing).length;
+      setSelectedImages(prev => prev.filter((_, i) => i !== newImageIndex));
+    }
+    
+    setImagePreviews(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updateImageColorTag = (index, color) => {
+    setImagePreviews(prev => prev.map((img, i) => 
+      i === index ? { ...img, colorTag: color } : img
+    ));
+  };
+
+  const setPrimaryImage = (index) => {
+    setImagePreviews(prev => prev.map((img, i) => ({
+      ...img,
+      isPrimary: i === index
+    })));
+  };
+
+  const getAvailableColors = () => {
+    if (formData.category === 'Clothing' && formData.clothingDetails) {
+      return formData.clothingDetails.colors || [];
+    }
+    if (formData.category === 'Shoes' && formData.shoesDetails) {
+      return formData.shoesDetails.colors || [];
+    }
+    if (formData.category === 'Accessories' && formData.accessoriesDetails) {
+      return formData.accessoriesDetails.colors || [];
+    }
+    return [];
+  };
+
+  const getAvailableSizes = () => {
+    if (formData.category === 'Clothing' && formData.clothingDetails) {
+      return formData.clothingDetails.sizes || [];
+    }
+    if (formData.category === 'Shoes' && formData.shoesDetails) {
+      return formData.shoesDetails.sizes || [];
+    }
+    return [];
+  };
+
+  const addColorToCategory = (colorName) => {
+    const trimmedColor = colorName.trim();
+    if (!trimmedColor) return;
+
+    if (formData.category === 'Clothing' && formData.clothingDetails) {
+      if (!formData.clothingDetails.colors.includes(trimmedColor)) {
+        handleArrayFieldChange('clothing', 'colors', trimmedColor);
+      }
+    } else if (formData.category === 'Shoes' && formData.shoesDetails) {
+      if (!formData.shoesDetails.colors.includes(trimmedColor)) {
+        handleArrayFieldChange('shoes', 'colors', trimmedColor);
+      }
+    } else if (formData.category === 'Accessories' && formData.accessoriesDetails) {
+      if (!formData.accessoriesDetails.colors.includes(trimmedColor)) {
+        handleArrayFieldChange('accessories', 'colors', trimmedColor);
+      }
     }
   };
 
-  const removeImage = () => {
-    setSelectedImage(null);
-    setImagePreview(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+  const handleVariantsDetected = (colors) => {
+    setDetectedColorVariants(colors);
+    setFormData(prev => ({
+      ...prev,
+      hasVariants: colors.length >= 2
+    }));
+  };
+
+  const syncSizesToCategory = (sizes) => {
+    if (formData.category === 'Clothing' && formData.clothingDetails) {
+      setFormData(prev => ({
+        ...prev,
+        clothingDetails: {
+          ...prev.clothingDetails,
+          sizes: sizes
+        }
+      }));
+    } else if (formData.category === 'Shoes' && formData.shoesDetails) {
+      setFormData(prev => ({
+        ...prev,
+        shoesDetails: {
+          ...prev.shoesDetails,
+          sizes: sizes
+        }
+      }));
     }
   };
 
-  const removeCurrentImage = () => {
-    setCurrentImage(null);
+  const calculateTotalStock = () => {
+    if (!variants || variants.length === 0) return 0;
+    
+    return variants.reduce((total, variant) => {
+      if (!variant.sizes || !Array.isArray(variant.sizes)) return total;
+      return total + variant.sizes.reduce((sum, size) => {
+        return sum + (parseInt(size.quantityInStock) || 0);
+      }, 0);
+    }, 0);
   };
 
-  const uploadImage = async () => {
-    if (!selectedImage) return null;
+  const syncStockToForm = () => {
+    const totalStock = calculateTotalStock();
+    setFormData(prev => ({
+      ...prev,
+      quantityInStock: totalStock.toString()
+    }));
+    
+    if (errors.quantityInStock) {
+      setErrors(prev => ({ ...prev, quantityInStock: '' }));
+    }
+  };
+
+  useEffect(() => {
+    if (detectedColorVariants.length >= 2 && variants && variants.length > 0) {
+      const totalStock = calculateTotalStock();
+      setFormData(prev => ({
+        ...prev,
+        quantityInStock: totalStock.toString()
+      }));
+    }
+  }, [variants, detectedColorVariants.length]);
+
+  const uploadMultipleImages = async () => {
+    if (selectedImages.length === 0) return [];
 
     setIsUploadingImage(true);
-    try {
-      const imageFormData = new FormData();
-      imageFormData.append('image', selectedImage);
+    const uploadedUrls = [];
 
-      const result = await secureFormDataCall('/api/inventory/upload-image', imageFormData);
-      return result.imageUrl;
+    try {
+      for (const file of selectedImages) {
+        const imageFormData = new FormData();
+        imageFormData.append('image', file);
+        const result = await secureFormDataCall('/api/inventory/upload-image', imageFormData);
+        uploadedUrls.push(result.imageUrl);
+      }
+      return uploadedUrls;
     } catch (error) {
-      setErrors(prev => ({ ...prev, image: 'Failed to upload image' }));
+      setErrors(prev => ({ ...prev, images: 'Failed to upload some images' }));
       throw error;
     } finally {
       setIsUploadingImage(false);
@@ -402,31 +555,33 @@ export default function EditInventoryModal({ isOpen, onClose, onSubmit, item }) 
     const newErrors = {};
 
     if (!formData.productName.trim()) {
-      newErrors.productName = "Product name is required";
+      newErrors.productName = 'Product name is required';
     }
 
     if (!formData.category.trim()) {
-      newErrors.category = "Category is required";
+      newErrors.category = 'Category is required';
     }
 
-    if (!formData.quantityInStock || formData.quantityInStock < 0) {
-      newErrors.quantityInStock = "Valid quantity is required";
+    if (detectedColorVariants.length < 2) {
+      if (!formData.quantityInStock || formData.quantityInStock < 0) {
+        newErrors.quantityInStock = 'Valid quantity is required';
+      }
     }
 
     if (!formData.reorderLevel || formData.reorderLevel < 0) {
-      newErrors.reorderLevel = "Valid reorder level is required";
+      newErrors.reorderLevel = 'Valid reorder level is required';
     }
 
     if (!formData.costPrice || formData.costPrice <= 0) {
-      newErrors.costPrice = "Valid cost price is required";
+      newErrors.costPrice = 'Valid cost price is required';
     }
 
     if (!formData.sellingPrice || formData.sellingPrice <= 0) {
-      newErrors.sellingPrice = "Valid selling price is required";
+      newErrors.sellingPrice = 'Valid selling price is required';
     }
 
     if (parseFloat(formData.sellingPrice) < parseFloat(formData.costPrice)) {
-      newErrors.sellingPrice = "Selling price should be higher than cost price";
+      newErrors.sellingPrice = 'Selling price should be higher than cost price';
     }
 
     setErrors(newErrors);
@@ -436,38 +591,159 @@ export default function EditInventoryModal({ isOpen, onClose, onSubmit, item }) 
   const handleSubmit = async (e) => {
     e.preventDefault();
     
+    if (detectedColorVariants.length >= 2) {
+      const totalStock = calculateTotalStock();
+      setFormData(prev => ({
+        ...prev,
+        quantityInStock: totalStock.toString()
+      }));
+    }
+    
     if (!validateForm()) return;
+
+    if (imagePreviews.length === 0) {
+      setErrors({ submit: 'Please upload at least one product image' });
+      return;
+    }
+
+    if (detectedColorVariants.length >= 2) {
+      if (variants.length === 0 || variants.every(v => v.sizes.length === 0)) {
+        setErrors({ submit: 'Please configure sizes and stock for your color variants' });
+        return;
+      }
+      
+      const totalStock = calculateTotalStock();
+      if (totalStock === 0) {
+        setErrors({ submit: 'Please add stock quantities to your variants' });
+        return;
+      }
+    }
 
     setIsSubmitting(true);
     
     try {
-      // Upload new image if selected
-      let imageUrl = currentImage;
-      if (selectedImage) {
-        imageUrl = await uploadImage();
-      } else if (currentImage === null) {
-        imageUrl = null;
-      }
+      // Upload new images
+      const uploadedUrls = await uploadMultipleImages();
+      
+      // Combine existing and new images
+      const existingImagesData = imagePreviews
+        .filter(img => img.existing)
+        .map(img => ({
+          url: img.url,
+          colorTag: img.colorTag,
+          isPrimary: img.isPrimary,
+          altText: `${formData.productName} - ${img.colorTag || 'Image'}`
+        }));
+      
+      const newImagesData = imagePreviews
+        .filter(img => !img.existing)
+        .map((preview, index) => ({
+          url: uploadedUrls[index],
+          colorTag: preview.colorTag,
+          isPrimary: preview.isPrimary,
+          altText: `${formData.productName} - ${preview.colorTag || 'Image'}`
+        }));
+      
+      const allImagesData = [...existingImagesData, ...newImagesData];
+      const imageUrl = allImagesData.find(img => img.isPrimary)?.url || allImagesData[0]?.url;
 
-      // Convert string numbers to actual numbers and add image URL
+      // Transform variants
+      const transformedVariants = variants.flatMap(colorVariant =>
+        colorVariant.sizes.map(sizeObj => ({
+          size: sizeObj.size,
+          color: colorVariant.color,
+          quantityInStock: parseInt(sizeObj.quantityInStock) || 0,
+          reorderLevel: sizeObj.reorderLevel || 5,
+          soldQuantity: 0,
+          images: imagePreviews
+            .filter(img => img.colorTag === colorVariant.color)
+            .map(img => img.existing ? img.url : uploadedUrls[imagePreviews.filter(p => !p.existing).indexOf(img)]),
+          sku: sizeObj.sku || `${formData.category.substring(0, 3).toUpperCase()}-${colorVariant.color.substring(0, 3).toUpperCase()}-${sizeObj.size}`,
+          isActive: true
+        }))
+      );
+
+      const finalTotalStock = detectedColorVariants.length >= 2 
+        ? calculateTotalStock() 
+        : parseFloat(formData.quantityInStock);
+
       const processedData = {
         ...formData,
-        quantityInStock: parseFloat(formData.quantityInStock),
+        quantityInStock: finalTotalStock,
         reorderLevel: parseFloat(formData.reorderLevel),
         costPrice: parseFloat(formData.costPrice),
         sellingPrice: parseFloat(formData.sellingPrice),
-        image: imageUrl
+        image: imageUrl,
+        images: allImagesData,
+        hasVariants: detectedColorVariants.length >= 2,
+        variants: transformedVariants
       };
 
       const response = await onSubmit(item._id, processedData);
       
-      // Only close and reset if submission was successful
       if (response && response.success) {
-        // Reset states
-        setSelectedImage(null);
-        setImagePreview(null);
+        // Update current active batch with all relevant fields that changed
+        if (activeBatch) {
+          const batchUpdates = {};
+          let hasChanges = false;
+
+          // Check and prepare all fields that should sync to active batch
+          if (parseFloat(formData.costPrice) !== activeBatch.costPrice) {
+            batchUpdates.costPrice = parseFloat(formData.costPrice);
+            hasChanges = true;
+          }
+          
+          if (parseFloat(formData.sellingPrice) !== activeBatch.sellingPrice) {
+            batchUpdates.sellingPrice = parseFloat(formData.sellingPrice);
+            hasChanges = true;
+          }
+          
+          if (formData.supplier && formData.supplier !== activeBatch.supplier) {
+            batchUpdates.supplier = formData.supplier;
+            hasChanges = true;
+          }
+          
+          if (formData.location && formData.location !== activeBatch.batchLocation) {
+            batchUpdates.batchLocation = formData.location;
+            hasChanges = true;
+          }
+
+          // Only make API call if there are actual changes
+          if (hasChanges) {
+            try {
+              const batchData = JSON.stringify({
+                batchId: activeBatch._id,
+                ...batchUpdates
+              });
+
+              const batchUpdateResponse = await secureApiCall(
+                `/api/inventory/${item._id}/batches`,
+                {
+                  method: 'PATCH',
+                  body: batchData
+                }
+              );
+
+              if (batchUpdateResponse.success) {
+                console.log('Active batch updated successfully with:', Object.keys(batchUpdates).join(', '));
+                setBatchUpdated(true);
+              }
+            } catch (batchError) {
+              console.error('Failed to update active batch:', batchError);
+              // Don't fail the entire operation if batch update fails
+            }
+          }
+        }
+        
+        setSelectedImages([]);
+        setImagePreviews([]);
+        setExistingImages([]);
+        setDetectedColorVariants([]);
+        setVariants([]);
         setErrors({});
-        setIsSubmitting(false); // Set to false before closing
+        setActiveBatch(null);
+        setBatchUpdated(false);
+        setIsSubmitting(false);
         onClose();
       } else {
         throw new Error(response?.message || 'Failed to update item');
@@ -475,7 +751,7 @@ export default function EditInventoryModal({ isOpen, onClose, onSubmit, item }) 
     } catch (error) {
       console.error('Submit error:', error);
       setErrors({ submit: error.message || 'Failed to update item' });
-      setIsSubmitting(false); // Make sure to set false on error too
+      setIsSubmitting(false);
     }
   };
 
@@ -488,9 +764,19 @@ export default function EditInventoryModal({ isOpen, onClose, onSubmit, item }) 
 
   if (!isOpen || !item) return null;
 
+  const tabs = [
+    { id: 'basic', label: 'Basic Info', icon: Package },
+    { id: 'media', label: 'Images & Variants', icon: Tag },
+    { id: 'stock', label: 'Stock & Pricing', icon: DollarSign },
+    ...(formData.category && formData.category !== 'Other' 
+      ? [{ id: 'category', label: `${formData.category} Details`, icon: Package }] 
+      : []),
+    { id: 'additional', label: 'Additional Info', icon: Tag }
+  ];
+
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
+      <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div className="flex items-center space-x-3">
@@ -510,743 +796,203 @@ export default function EditInventoryModal({ isOpen, onClose, onSubmit, item }) 
           </button>
         </div>
 
+        {/* Tabs */}
+        <div className="border-b border-gray-200 bg-gray-50">
+          <div className="flex overflow-x-auto">
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center space-x-2 px-6 py-3 border-b-2 font-medium text-sm whitespace-nowrap transition-colors ${
+                    activeTab === tab.id
+                      ? 'border-teal-600 text-teal-600 bg-white'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+        <form id="edit-inventory-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6">
           {errors.submit && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
               <p className="text-red-600 text-sm">{errors.submit}</p>
             </div>
           )}
 
-          <div className="space-y-8">
-            {/* Product Information */}
-            <div>
-              <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
-                <Tag className="w-5 h-5 mr-2 text-gray-600" />
-                What are you selling?
-              </h3>
+          {/* Basic Info Tab */}
+          {activeTab === 'basic' && (
+            <div className="space-y-8">
+              {/* Product Information */}
+              <div>
+                <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                  <Tag className="w-5 h-5 mr-2 text-gray-600" />
+                  Product Information
+                </h3>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Product Name *
-                  </label>
-                  <p className="text-xs text-gray-500 mb-2">What do you call this thing you're selling?</p>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Product Name *</label>
                   <input
                     type="text"
                     name="productName"
                     value={formData.productName}
                     onChange={handleChange}
-                    placeholder="e.g., Red T-Shirt, iPhone 13, Bread"
+                    placeholder="e.g., Red T-Shirt"
                     className={`w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent text-black ${
                       errors.productName ? 'border-red-300' : 'border-gray-300'
                     }`}
                   />
-                  {errors.productName && (
-                    <p className="text-red-500 text-xs mt-1">{errors.productName}</p>
-                  )}
+                  {errors.productName && <p className="text-red-500 text-xs mt-1">{errors.productName}</p>}
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Category *
-                  </label>
-                  <p className="text-xs text-gray-500 mb-2">What type of thing is this? Like putting toys with toys</p>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
                   <CustomDropdown
                     options={categoryOptions}
                     value={formData.category}
                     onChange={handleCategoryChange}
-                    placeholder="Pick what type it is"
+                    placeholder="Select category"
                     error={!!errors.category}
                   />
-                  {errors.category && (
-                    <p className="text-red-500 text-xs mt-1">{errors.category}</p>
-                  )}
+                  {errors.category && <p className="text-red-500 text-xs mt-1">{errors.category}</p>}
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Brand
-                  </label>
-                  <p className="text-xs text-gray-500 mb-2">Who made this? Like Nike makes shoes, Apple makes phones</p>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
                   <input
                     type="text"
                     name="brand"
                     value={formData.brand}
                     onChange={handleChange}
-                    placeholder="e.g., Nike, Samsung, Coca-Cola"
+                    placeholder="e.g., Nike"
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent text-black"
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Product Picture
-                  </label>
-                  <p className="text-xs text-gray-500 mb-2">Take a photo of your product so you can see it</p>
-                  
-                  {/* Current Image */}
-                  {currentImage && !imagePreview && (
-                    <div className="relative mb-3">
-                      <img
-                        src={currentImage}
-                        alt="Current product"
-                        className="w-full h-24 object-cover rounded-xl"
-                      />
-                      <button
-                        type="button"
-                        onClick={removeCurrentImage}
-                        className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                      <div className="absolute bottom-2 left-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
-                        Current Image
-                      </div>
-                    </div>
-                  )}
-
-                  {/* New Image Preview */}
-                  {imagePreview && (
-                    <div className="relative mb-3">
-                      <img
-                        src={imagePreview}
-                        alt="New product preview"
-                        className="w-full h-24 object-cover rounded-xl"
-                      />
-                      <button
-                        type="button"
-                        onClick={removeImage}
-                        className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                      <div className="absolute bottom-2 left-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
-                        New Image
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Upload Button */}
-                  {!imagePreview && (
-                    <div
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-full h-24 border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center cursor-pointer hover:border-teal-500 transition-colors"
-                    >
-                      <div className="text-center">
-                        <Upload className="w-6 h-6 text-gray-400 mx-auto mb-2" />
-                        <p className="text-sm text-gray-500">
-                          {currentImage ? 'Click to change photo' : 'Click to upload photo'}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                  
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageSelect}
-                    className="hidden"
-                  />
-                  
-                  {errors.image && (
-                    <p className="text-red-500 text-xs mt-1">{errors.image}</p>
-                  )}
-                </div>
-
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Description
-                  </label>
-                  <p className="text-xs text-gray-500 mb-2">Tell us more about it - what color, size, or special things about it</p>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                   <textarea
                     name="description"
                     value={formData.description}
                     onChange={handleChange}
                     rows={3}
-                    placeholder="e.g., Blue color, size Large, very soft"
+                    placeholder="Describe your product"
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent text-black"
                   />
                 </div>
               </div>
             </div>
-
-            {/* Category-Specific Details - Clothing */}
-            {formData.category === 'Clothing' && formData.clothingDetails && (
-              <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-4">
-                  Clothing Details
-                </h3>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      For who?
-                    </label>
-                    <CustomDropdown
-                      options={[
-                        { value: 'Men', label: 'Men' },
-                        { value: 'Women', label: 'Women' },
-                        { value: 'Unisex', label: 'Unisex' },
-                        { value: 'Kids', label: 'Kids' },
-                        { value: 'Babies', label: 'Babies' }
-                      ]}
-                      value={formData.clothingDetails.gender}
-                      onChange={(value) => handleCategoryDetailChange('clothing', 'gender', value)}
-                      placeholder="Select gender"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Type of clothing
-                    </label>
-                    <CustomDropdown
-                      options={[
-                        { value: '', label: 'Select type' },
-                        { value: 'T-shirts', label: 'T-shirts' },
-                        { value: 'Polo shirts', label: 'Polo shirts' },
-                        { value: 'Hoodies', label: 'Hoodies' },
-                        { value: 'Jeans', label: 'Jeans' },
-                        { value: 'Shorts', label: 'Shorts' },
-                        { value: 'Jackets', label: 'Jackets' },
-                        { value: 'Casual dresses', label: 'Dresses' },
-                        { value: 'Other', label: 'Other' }
-                      ]}
-                      value={formData.clothingDetails.productType}
-                      onChange={(value) => handleCategoryDetailChange('clothing', 'productType', value)}
-                      placeholder="Select clothing type"
-                    />
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Material
-                    </label>
-                    <CustomDropdown
-                      options={[
-                        { value: '', label: 'Select material' },
-                        { value: 'Cotton', label: 'Cotton' },
-                        { value: 'Polyester', label: 'Polyester' },
-                        { value: 'Denim', label: 'Denim' },
-                        { value: 'Silk', label: 'Silk' },
-                        { value: 'Velvet', label: 'Velvet' },
-                        { value: 'Ankara', label: 'Ankara' },
-                        { value: 'Aso Oke', label: 'Aso Oke' },
-                        { value: 'Kente', label: 'Kente' },
-                        { value: 'Adire', label: 'Adire (Tie-Dye)' },
-                        { value: 'Kampala', label: 'Kampala' },
-                        { value: 'Dashiki', label: 'Dashiki' },
-                        { value: 'Batik', label: 'Batik' },
-                        { value: 'Mixed', label: 'Mixed' },
-                        { value: 'Other', label: 'Other' }
-                      ]}
-                      value={formData.clothingDetails.material}
-                      onChange={(value) => handleCategoryDetailChange('clothing', 'material', value)}
-                      placeholder="Select material"
-                    />
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Style (select all that apply - optional)
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {['Minimalist', 'Vintage', 'Urban/Street', 'Athleisure', 'Luxury', 'Oversized', 'Slim fit', 'Regular fit', 'Other'].map(style => (
-                        <button
-                          key={style}
-                          type="button"
-                          onClick={() => {
-                            const styles = formData.clothingDetails.style || [];
-                            if (styles.includes(style)) {
-                              handleCategoryDetailChange('clothing', 'style', styles.filter(s => s !== style));
-                            } else {
-                              handleCategoryDetailChange('clothing', 'style', [...styles, style]);
-                            }
-                          }}
-                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                            (formData.clothingDetails.style || []).includes(style)
-                              ? 'bg-teal-600 text-white'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                          }`}
-                        >
-                          {style}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Occasions (select all that apply)
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {['Casual', 'Office/Corporate', 'Party', 'Streetwear', 'Sports/Fitness', 'Traditional', 'Outdoor', 'Owambe', 'Wedding', 'Church/Religious', 'Beach', 'Formal Event', 'Other'].map(occasion => (
-                        <button
-                          key={occasion}
-                          type="button"
-                          onClick={() => {
-                            const occasions = formData.clothingDetails.occasion || [];
-                            if (occasions.includes(occasion)) {
-                              handleCategoryDetailChange('clothing', 'occasion', occasions.filter(o => o !== occasion));
-                            } else {
-                              handleCategoryDetailChange('clothing', 'occasion', [...occasions, occasion]);
-                            }
-                          }}
-                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                            (formData.clothingDetails.occasion || []).includes(occasion)
-                              ? 'bg-teal-600 text-white'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                          }`}
-                        >
-                          {occasion}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Available Sizes
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'Plus Size', 'Kids 2-4', 'Kids 5-7', 'Kids 8-12', 'Custom'].map(size => (
-                        <button
-                          key={size}
-                          type="button"
-                          onClick={() => {
-                            if (formData.clothingDetails.sizes.includes(size)) {
-                              const index = formData.clothingDetails.sizes.indexOf(size);
-                              removeArrayItem('clothing', 'sizes', index);
-                            } else {
-                              handleArrayFieldChange('clothing', 'sizes', size);
-                            }
-                          }}
-                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                            formData.clothingDetails.sizes.includes(size)
-                              ? 'bg-teal-600 text-white'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                          }`}
-                        >
-                          {size}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Category-Specific Details - Shoes */}
-            {formData.category === 'Shoes' && formData.shoesDetails && (
-              <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-4">
-                  Shoe Details
-                </h3>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      For who?
-                    </label>
-                    <CustomDropdown
-                      options={[
-                        { value: 'Men', label: 'Men' },
-                        { value: 'Women', label: 'Women' },
-                        { value: 'Unisex', label: 'Unisex' },
-                        { value: 'Kids', label: 'Kids' },
-                        { value: 'Babies', label: 'Babies' }
-                      ]}
-                      value={formData.shoesDetails.gender}
-                      onChange={(value) => handleCategoryDetailChange('shoes', 'gender', value)}
-                      placeholder="Select gender"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Type of shoe
-                    </label>
-                    <CustomDropdown
-                      options={[
-                        { value: '', label: 'Select type' },
-                        { value: 'Sneakers', label: 'Sneakers' },
-                        { value: 'Sandals', label: 'Sandals' },
-                        { value: 'Slippers', label: 'Slippers' },
-                        { value: 'Boots', label: 'Boots' },
-                        { value: 'Heels', label: 'Heels' },
-                        { value: 'Sports shoes', label: 'Sports shoes' },
-                        { value: 'Other', label: 'Other' }
-                      ]}
-                      value={formData.shoesDetails.shoeType}
-                      onChange={(value) => handleCategoryDetailChange('shoes', 'shoeType', value)}
-                      placeholder="Select shoe type"
-                    />
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Material
-                    </label>
-                    <CustomDropdown
-                      options={[
-                        { value: '', label: 'Select material' },
-                        { value: 'Leather', label: 'Leather' },
-                        { value: 'Canvas', label: 'Canvas' },
-                        { value: 'Rubber', label: 'Rubber' },
-                        { value: 'Synthetic', label: 'Synthetic' },
-                        { value: 'Mixed', label: 'Mixed' },
-                        { value: 'Other', label: 'Other' }
-                      ]}
-                      value={formData.shoesDetails.material}
-                      onChange={(value) => handleCategoryDetailChange('shoes', 'material', value)}
-                      placeholder="Select material"
-                    />
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Occasions (select all that apply)
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {['Casual', 'Office/Corporate', 'Party', 'Sports/Fitness', 'Outdoor', 'Beach', 'Owambe', 'Wedding', 'Church/Religious', 'Formal Event', 'Other'].map(occasion => (
-                        <button
-                          key={occasion}
-                          type="button"
-                          onClick={() => {
-                            const occasions = formData.shoesDetails.occasion || [];
-                            if (occasions.includes(occasion)) {
-                              handleCategoryDetailChange('shoes', 'occasion', occasions.filter(o => o !== occasion));
-                            } else {
-                              handleCategoryDetailChange('shoes', 'occasion', [...occasions, occasion]);
-                            }
-                          }}
-                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                            (formData.shoesDetails.occasion || []).includes(occasion)
-                              ? 'bg-teal-600 text-white'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                          }`}
-                        >
-                          {occasion}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Available Sizes
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {['38', '39', '40', '41', '42', '43', '44', '45'].map(size => (
-                        <button
-                          key={size}
-                          type="button"
-                          onClick={() => {
-                            if (formData.shoesDetails.sizes.includes(size)) {
-                              const index = formData.shoesDetails.sizes.indexOf(size);
-                              removeArrayItem('shoes', 'sizes', index);
-                            } else {
-                              handleArrayFieldChange('shoes', 'sizes', size);
-                            }
-                          }}
-                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                            formData.shoesDetails.sizes.includes(size)
-                              ? 'bg-teal-600 text-white'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                          }`}
-                        >
-                          {size}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Category-Specific Details - Accessories */}
-            {formData.category === 'Accessories' && formData.accessoriesDetails && (
-              <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-4">
-                  Accessory Details
-                </h3>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Type of accessory
-                    </label>
-                    <CustomDropdown
-                      options={[
-                        { value: '', label: 'Select type' },
-                        { value: 'Bags', label: 'Bags' },
-                        { value: 'Handbags', label: 'Handbags' },
-                        { value: 'Wallets', label: 'Wallets' },
-                        { value: 'Belts', label: 'Belts' },
-                        { value: 'Watches', label: 'Watches' },
-                        { value: 'Jewelry', label: 'Jewelry' },
-                        { value: 'Sunglasses', label: 'Sunglasses' },
-                        { value: 'Hats/Caps', label: 'Hats/Caps' },
-                        { value: 'Other', label: 'Other' }
-                      ]}
-                      value={formData.accessoriesDetails.accessoryType}
-                      onChange={(value) => handleCategoryDetailChange('accessories', 'accessoryType', value)}
-                      placeholder="Select accessory type"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      For who?
-                    </label>
-                    <CustomDropdown
-                      options={[
-                        { value: 'Men', label: 'Men' },
-                        { value: 'Women', label: 'Women' },
-                        { value: 'Unisex', label: 'Unisex' },
-                        { value: 'Kids', label: 'Kids' }
-                      ]}
-                      value={formData.accessoriesDetails.gender}
-                      onChange={(value) => handleCategoryDetailChange('accessories', 'gender', value)}
-                      placeholder="Select gender"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Material
-                    </label>
-                    <CustomDropdown
-                      options={[
-                        { value: '', label: 'Select material' },
-                        { value: 'Leather', label: 'Leather' },
-                        { value: 'Metal', label: 'Metal' },
-                        { value: 'Plastic', label: 'Plastic' },
-                        { value: 'Gold', label: 'Gold' },
-                        { value: 'Silver', label: 'Silver' },
-                        { value: 'Stainless Steel', label: 'Stainless Steel' },
-                        { value: 'Mixed', label: 'Mixed' },
-                        { value: 'Other', label: 'Other' }
-                      ]}
-                      value={formData.accessoriesDetails.material}
-                      onChange={(value) => handleCategoryDetailChange('accessories', 'material', value)}
-                      placeholder="Select material"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Category-Specific Details - Perfumes */}
-            {formData.category === 'Perfumes' && formData.perfumeDetails && (
-              <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-4">
-                  Perfume Details
-                </h3>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Type of fragrance
-                    </label>
-                    <CustomDropdown
-                      options={[
-                        { value: '', label: 'Select type' },
-                        { value: 'Eau de Parfum', label: 'Eau de Parfum' },
-                        { value: 'Eau de Toilette', label: 'Eau de Toilette' },
-                        { value: 'Cologne', label: 'Cologne' },
-                        { value: 'Body Spray', label: 'Body Spray' },
-                        { value: 'Perfume Oil', label: 'Perfume Oil' },
-                        { value: 'Body Mist', label: 'Body Mist' },
-                        { value: 'Other', label: 'Other' }
-                      ]}
-                      value={formData.perfumeDetails.fragranceType}
-                      onChange={(value) => handleCategoryDetailChange('perfume', 'fragranceType', value)}
-                      placeholder="Select fragrance type"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      For who?
-                    </label>
-                    <CustomDropdown
-                      options={[
-                        { value: 'Men', label: 'Men' },
-                        { value: 'Women', label: 'Women' },
-                        { value: 'Unisex', label: 'Unisex' }
-                      ]}
-                      value={formData.perfumeDetails.gender}
-                      onChange={(value) => handleCategoryDetailChange('perfume', 'gender', value)}
-                      placeholder="Select gender"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Volume
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.perfumeDetails.volume}
-                      onChange={(e) => handleCategoryDetailChange('perfume', 'volume', e.target.value)}
-                      placeholder="e.g., 50ml, 100ml"
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent text-black"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Scent family
-                    </label>
-                    <CustomDropdown
-                      options={[
-                        { value: '', label: 'Select scent' },
-                        { value: 'Floral', label: 'Floral' },
-                        { value: 'Woody', label: 'Woody' },
-                        { value: 'Fresh/Citrus', label: 'Fresh/Citrus' },
-                        { value: 'Oriental/Spicy', label: 'Oriental/Spicy' },
-                        { value: 'Fruity', label: 'Fruity' },
-                        { value: 'Aquatic', label: 'Aquatic' },
-                        { value: 'Other', label: 'Other' }
-                      ]}
-                      value={formData.perfumeDetails.scentFamily}
-                      onChange={(value) => handleCategoryDetailChange('perfume', 'scentFamily', value)}
-                      placeholder="Select scent family"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Strength
-                    </label>
-                    <CustomDropdown
-                      options={[
-                        { value: '', label: 'Select strength' },
-                        { value: 'Light', label: 'Light' },
-                        { value: 'Moderate', label: 'Moderate' },
-                        { value: 'Strong', label: 'Strong' },
-                        { value: 'Very Strong', label: 'Very Strong' }
-                      ]}
-                      value={formData.perfumeDetails.concentration}
-                      onChange={(value) => handleCategoryDetailChange('perfume', 'concentration', value)}
-                      placeholder="Select strength"
-                    />
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Occasions (select all that apply)
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {['Everyday', 'Office', 'Evening/Night', 'Special Occasion', 'Sports', 'Owambe', 'Wedding', 'Church/Religious', 'Date Night', 'Other'].map(occasion => (
-                        <button
-                          key={occasion}
-                          type="button"
-                          onClick={() => {
-                            const occasions = formData.perfumeDetails.occasion || [];
-                            if (occasions.includes(occasion)) {
-                              handleCategoryDetailChange('perfume', 'occasion', occasions.filter(o => o !== occasion));
-                            } else {
-                              handleCategoryDetailChange('perfume', 'occasion', [...occasions, occasion]);
-                            }
-                          }}
-                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                            (formData.perfumeDetails.occasion || []).includes(occasion)
-                              ? 'bg-teal-600 text-white'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                          }`}
-                        >
-                          {occasion}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Tags */}
-            <div>
-              <h3 className="text-lg font-medium text-gray-900 mb-4">
-                Tags (optional)
-              </h3>
-              <p className="text-sm text-gray-500 mb-3">Help customers find your product easier</p>
-              <div className="flex flex-wrap gap-2">
-                {tagOptions.map(tag => (
-                  <button
-                    key={tag.value}
-                    type="button"
-                    onClick={() => toggleTag(tag.value)}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      formData.tags.includes(tag.value)
-                        ? 'bg-teal-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    {tag.label}
-                  </button>
-                ))}
-              </div>
             </div>
+          )}
 
-            {/* Stock Information */}
+          {/* Images & Variants Tab */}
+          {activeTab === 'media' && (
+            <div className="space-y-8">
+              {/* Image Upload Section */}
+              <ImageUploadSection
+              hasVariants={formData.hasVariants}
+              category={formData.category}
+              imagePreviews={imagePreviews}
+              multiImageInputRef={multiImageInputRef}
+              handleMultiImageSelect={handleMultiImageSelect}
+              removeMultiImage={removeMultiImage}
+              updateImageColorTag={updateImageColorTag}
+              setPrimaryImage={setPrimaryImage}
+              getAvailableColors={getAvailableColors}
+              addColorToCategory={addColorToCategory}
+              onVariantsDetected={handleVariantsDetected}
+              errors={errors}
+            />
+
+            {/* Variant Manager */}
+            {detectedColorVariants.length >= 2 && (
+              <VariantManager
+                detectedColors={detectedColorVariants}
+                variants={variants}
+                setVariants={setVariants}
+                getAvailableSizes={getAvailableSizes}
+                calculateTotalStock={calculateTotalStock}
+                syncSizesToCategory={syncSizesToCategory}
+                syncStockToForm={syncStockToForm}
+              />
+            )}
+            </div>
+          )}
+
+          {/* Stock & Pricing Tab */}
+          {activeTab === 'stock' && (
+            <div className="space-y-8">
+              {/* Stock Information */}
             <div>
               <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
                 <Package className="w-5 h-5 mr-2 text-gray-600" />
-                How many do you have?
+                Stock Information
               </h3>
               
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    How do you count this? *
+                    Unit of Measure *
                   </label>
-                  <p className="text-xs text-gray-500 mb-2">Do you count by pieces (1, 2, 3) or by weight (1kg, 2kg)?</p>
                   <CustomDropdown
                     options={unitOptions}
                     value={formData.unitOfMeasure}
                     onChange={(value) => handleChange({ target: { name: 'unitOfMeasure', value } })}
-                    placeholder="How do you count?"
+                    placeholder="Select unit"
                   />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    How many do you have right now? *
+                    Quantity in Stock *
+                    {detectedColorVariants.length >= 2 && (
+                      <span className="text-xs text-blue-600 ml-2">(Auto-calculated from variants)</span>
+                    )}
                   </label>
-                  <p className="text-xs text-gray-500 mb-2">Count how many you have in your shop or store right now</p>
                   <input
                     type="number"
                     name="quantityInStock"
                     value={formData.quantityInStock}
                     onChange={handleChange}
                     min="0"
-                    step="0.01"
+                    step="1"
                     placeholder="0"
+                    disabled={detectedColorVariants.length >= 2}
+                    readOnly={detectedColorVariants.length >= 2}
                     className={`w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent text-black ${
                       errors.quantityInStock ? 'border-red-300' : 'border-gray-300'
-                    }`}
+                    } ${detectedColorVariants.length >= 2 ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                   />
-                  {errors.quantityInStock && (
+                  {detectedColorVariants.length >= 2 && (
+                    <p className="text-xs text-blue-600 mt-1">
+                      ✓ Auto-calculated from variants: {formData.quantityInStock} units
+                    </p>
+                  )}
+                  {!detectedColorVariants.length >= 2 && errors.quantityInStock && (
                     <p className="text-red-500 text-xs mt-1">{errors.quantityInStock}</p>
                   )}
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    When should we warn you? *
+                    Reorder Level *
                   </label>
-                  <p className="text-xs text-gray-500 mb-2">When you have this many left, we'll tell you to buy more</p>
                   <input
                     type="number"
                     name="reorderLevel"
                     value={formData.reorderLevel}
                     onChange={handleChange}
                     min="0"
-                    step="0.01"
+                    step="1"
                     placeholder="5"
                     className={`w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent text-black ${
                       errors.reorderLevel ? 'border-red-300' : 'border-gray-300'
@@ -1257,29 +1003,84 @@ export default function EditInventoryModal({ isOpen, onClose, onSubmit, item }) 
                   )}
                 </div>
               </div>
+
+              {/* Stock Information Help Text for Variants */}
+              {detectedColorVariants.length >= 2 && (
+                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                  <div className="flex items-start space-x-2">
+                    <Package className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-medium text-blue-900">Variant Stock Management</p>
+                      <p className="text-xs text-blue-700 mt-1">
+                        Total stock quantity is automatically calculated from all your variants. 
+                        Manage individual variant quantities in the Variant Manager above.
+                      </p>
+                      <div className="mt-2 text-xs text-blue-600">
+                        <span className="font-medium">Current breakdown:</span>
+                        {variants.map((variant, idx) => (
+                          <div key={idx} className="ml-2 mt-1">
+                            • {variant.color}: {variant.sizes.reduce((sum, s) => sum + (parseInt(s.quantityInStock) || 0), 0)} units
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Pricing Information */}
+            {/* Pricing */}
             <div>
               <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
                 <DollarSign className="w-5 h-5 mr-2 text-gray-600" />
-                Money stuff
+                Pricing
               </h3>
+              
+              {/* Current Active Batch Info */}
+              {activeBatch && (
+                <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                  <div className="flex items-start space-x-2">
+                    <Package className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-blue-900">Current Active Batch: {activeBatch.batchCode}</p>
+                      <p className="text-xs text-blue-700 mt-1">
+                        Received: {new Date(activeBatch.dateReceived).toLocaleDateString()} • 
+                        Remaining: {activeBatch.quantityRemaining} {formData.unitOfMeasure}
+                      </p>
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <span className="text-blue-600">Batch Cost:</span>
+                          <span className="ml-1 font-medium text-blue-900">₦{activeBatch.costPrice}</span>
+                        </div>
+                        <div>
+                          <span className="text-blue-600">Batch Selling:</span>
+                          <span className="ml-1 font-medium text-blue-900">₦{activeBatch.sellingPrice}</span>
+                        </div>
+                      </div>
+                      {(parseFloat(formData.costPrice) !== activeBatch.costPrice || 
+                        parseFloat(formData.sellingPrice) !== activeBatch.sellingPrice ||
+                        formData.supplier !== activeBatch.supplier ||
+                        formData.location !== activeBatch.batchLocation) && (
+                        <div className="mt-2 px-2 py-1 bg-amber-100 border border-amber-300 rounded text-xs text-amber-800">
+                          ⚠️ Updates will also sync to this active batch (prices, supplier, location)
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {isLoadingBatch && (
+                <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-xl">
+                  <p className="text-sm text-gray-600">Loading batch information...</p>
+                </div>
+              )}
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {formData.category === 'Food' || formData.category === 'Beverages' 
-                      ? 'How much does it cost you to make one? *' 
-                      : 'How much did you pay for it? *'
-                    }
+                    Cost Price *
                   </label>
-                  <p className="text-xs text-gray-500 mb-2">
-                    {formData.category === 'Food' || formData.category === 'Beverages'
-                      ? 'Calculate ingredients + cooking/production + packaging costs per item'
-                      : 'How much money did you give to buy this from someone else?'
-                    }
-                  </p>
                   <input
                     type="number"
                     name="costPrice"
@@ -1292,21 +1093,13 @@ export default function EditInventoryModal({ isOpen, onClose, onSubmit, item }) 
                       errors.costPrice ? 'border-red-300' : 'border-gray-300'
                     }`}
                   />
-                  {errors.costPrice && (
-                    <p className="text-red-500 text-xs mt-1">{errors.costPrice}</p>
-                  )}
-                  {(formData.category === 'Food' || formData.category === 'Beverages') && (
-                    <p className="text-xs text-amber-600 mt-1">
-                      💡 <strong>Important:</strong> Accurate production cost helps calculate real profit margins!
-                    </p>
-                  )}
+                  {errors.costPrice && <p className="text-red-500 text-xs mt-1">{errors.costPrice}</p>}
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    How much will you sell it for? *
+                    Selling Price *
                   </label>
-                  <p className="text-xs text-gray-500 mb-2">How much money will people give you to buy this?</p>
                   <input
                     type="number"
                     name="sellingPrice"
@@ -1319,27 +1112,16 @@ export default function EditInventoryModal({ isOpen, onClose, onSubmit, item }) 
                       errors.sellingPrice ? 'border-red-300' : 'border-gray-300'
                     }`}
                   />
-                  {errors.sellingPrice && (
-                    <p className="text-red-500 text-xs mt-1">{errors.sellingPrice}</p>
-                  )}
+                  {errors.sellingPrice && <p className="text-red-500 text-xs mt-1">{errors.sellingPrice}</p>}
                 </div>
 
-                {/* Profit Margin Display */}
                 {formData.costPrice && formData.sellingPrice && (
                   <div className="md:col-span-2">
                     <div className="bg-gray-50 rounded-xl p-4">
                       <div className="flex justify-between items-center text-sm">
-                        <span className="text-gray-600">How much extra money you make:</span>
-                        <span className={`font-medium ${
-                          calculateProfitMargin() > 0 ? 'text-green-600' : 'text-red-600'
-                        }`}>
+                        <span className="text-gray-600">Profit Margin:</span>
+                        <span className={`font-medium ${calculateProfitMargin() > 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {calculateProfitMargin()}%
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center text-sm mt-2">
-                        <span className="text-gray-600">Extra money from each one:</span>
-                        <span className="font-medium text-gray-900">
-                          ₦{(parseFloat(formData.sellingPrice || 0) - parseFloat(formData.costPrice || 0)).toFixed(2)}
                         </span>
                       </div>
                     </div>
@@ -1347,79 +1129,112 @@ export default function EditInventoryModal({ isOpen, onClose, onSubmit, item }) 
                 )}
               </div>
             </div>
+            </div>
+          )}
 
-            {/* Additional Information */}
-            <div>
-              <h3 className="text-lg font-medium text-gray-900 mb-4">
-                Extra information (you can skip these)
-              </h3>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Where do you buy this from?
-                  </label>
-                  <p className="text-xs text-gray-500 mb-2">The person or shop you buy this from</p>
-                  <input
-                    type="text"
-                    name="supplier"
-                    value={formData.supplier}
-                    onChange={handleChange}
-                    placeholder="e.g., John's Shop, Market Mama"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent text-black"
-                  />
+          {/* Category Details Tab */}
+          {activeTab === 'category' && formData.category && formData.category !== 'Other' && (
+            <div className="space-y-8">
+              <CategoryDetailsRenderer
+                category={formData.category}
+                formData={formData}
+                handleCategoryDetailChange={handleCategoryDetailChange}
+                handleArrayFieldChange={handleArrayFieldChange}
+                removeArrayItem={removeArrayItem}
+                selectedStateForCity={selectedStateForCity}
+                setSelectedStateForCity={setSelectedStateForCity}
+                addDeliveryState={addDeliveryState}
+                removeDeliveryState={removeDeliveryState}
+                toggleCoverAllCitiesInState={toggleCoverAllCitiesInState}
+                addCityToDeliveryState={addCityToDeliveryState}
+                removeCityFromDeliveryState={removeCityFromDeliveryState}
+                detectedColorVariants={detectedColorVariants}
+              />
+            </div>
+          )}
+
+          {/* Additional Info Tab */}
+          {activeTab === 'additional' && (
+            <div className="space-y-8">
+              {/* Tags */}
+              <div>
+                <h3 className="text-lg font-medium text-gray-900 mb-4">
+                  Tags (optional)
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {tagOptions.map(tag => (
+                    <button
+                      key={tag.value}
+                      type="button"
+                      onClick={() => toggleTag(tag.value)}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        formData.tags.includes(tag.value)
+                          ? 'bg-teal-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {tag.label}
+                    </button>
+                  ))}
                 </div>
+              </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Where do you keep this?
-                  </label>
-                  <p className="text-xs text-gray-500 mb-2">Which part of your shop or room do you put this?</p>
-                  <input
-                    type="text"
-                    name="location"
-                    value={formData.location}
-                    onChange={handleChange}
-                    placeholder="e.g., Front shelf, Back room, Counter"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent text-black"
-                  />
-                </div>
+              {/* Supplier & Location */}
+              <div>
+                <h3 className="text-lg font-medium text-gray-900 mb-4">
+                  Supplier & Location
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Supplier
+                    </label>
+                    <input
+                      type="text"
+                      name="supplier"
+                      value={formData.supplier}
+                      onChange={handleChange}
+                      placeholder="e.g., ABC Distributors"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent text-black"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    QR Code
-                  </label>
-                  <p className="text-xs text-gray-500 mb-2">Square code you can scan with your phone camera</p>
-                  <input
-                    type="text"
-                    name="qrCode"
-                    value={formData.qrCode}
-                    onChange={handleChange}
-                    placeholder="e.g., QR12345ABC"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent text-black"
-                  />
-                </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Storage Location
+                    </label>
+                    <input
+                      type="text"
+                      name="location"
+                      value={formData.location}
+                      onChange={handleChange}
+                      placeholder="e.g., Main Store"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent text-black"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Notes to remember
-                  </label>
-                  <p className="text-xs text-gray-500 mb-2">Write anything you want to remember about this</p>
-                  <textarea
-                    name="notes"
-                    value={formData.notes}
-                    onChange={handleChange}
-                    rows={3}
-                    placeholder="e.g., People love this, Buy more next week"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent text-black"
-                  />
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Notes
+                    </label>
+                    <textarea
+                      name="notes"
+                      value={formData.notes}
+                      onChange={handleChange}
+                      rows={3}
+                      placeholder="Additional notes about this product"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent text-black"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          )}
+        </form>
 
-          {/* Footer */}
-          <div className="flex items-center justify-end space-x-4 pt-6 border-t border-gray-200 mt-8">
+        {/* Footer - Always visible */}
+        <div className="border-t border-gray-200 p-6 bg-gray-50">
+          <div className="flex items-center justify-end space-x-4">
             <button
               type="button"
               onClick={onClose}
@@ -1429,23 +1244,14 @@ export default function EditInventoryModal({ isOpen, onClose, onSubmit, item }) 
             </button>
             <button
               type="submit"
+              form="edit-inventory-form"
               disabled={isSubmitting || isUploadingImage}
               className="px-6 py-3 bg-teal-600 text-white rounded-xl hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center"
             >
-              {isSubmitting || isUploadingImage ? (
-                <>
-                  <svg className="animate-spin -ml-1 mr-3 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  {isUploadingImage ? 'Uploading Image...' : 'Updating Product...'}
-                </>
-              ) : (
-                'Update Product'
-              )}
+              {isSubmitting ? 'Updating...' : 'Update Product'}
             </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );

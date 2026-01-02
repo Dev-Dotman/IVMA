@@ -25,6 +25,8 @@ export async function GET(req, { params }) {
     const status = searchParams.get('status');
     const sortBy = searchParams.get('sortBy') || 'dateReceived';
     const sortOrder = parseInt(searchParams.get('sortOrder')) || -1;
+    const latest = searchParams.get('latest') === 'true';
+    const active = searchParams.get('active') === 'true';
 
     // Verify the inventory item belongs to the user
     const inventory = await Inventory.findOne({ _id: productId, userId: user._id });
@@ -33,6 +35,34 @@ export async function GET(req, { params }) {
         { success: false, message: 'Inventory item not found' },
         { status: 404 }
       );
+    }
+
+    // If active=true, return the current active batch (FIFO - oldest active batch with stock)
+    if (active) {
+      const activeBatch = await InventoryBatch.findOne({ 
+        productId,
+        status: 'active',
+        quantityRemaining: { $gt: 0 }
+      })
+        .sort({ dateReceived: 1 }) // FIFO - First In, First Out
+        .lean();
+
+      return NextResponse.json({
+        success: true,
+        batches: activeBatch ? [activeBatch] : []
+      });
+    }
+
+    // If latest=true, return only the most recent batch
+    if (latest) {
+      const latestBatch = await InventoryBatch.findOne({ productId })
+        .sort({ dateReceived: -1 })
+        .lean();
+
+      return NextResponse.json({
+        success: true,
+        batches: latestBatch ? [latestBatch] : []
+      });
     }
 
     const batches = await InventoryBatch.getBatchesByProduct(productId, {
@@ -264,6 +294,110 @@ export async function POST(req, { params }) {
       );
     }
 
+    return NextResponse.json(
+      { success: false, message: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+// PATCH - Update batch fields (prices, supplier, location, etc.)
+export async function PATCH(req, { params }) {
+  try {
+    await connectToDatabase();
+    
+    const user = await verifySession(req);
+    if (!user) {
+      return NextResponse.json(
+        { success: false, message: 'Not authenticated' },
+        { status: 401 }
+      );
+    }
+
+    const { id: productId } = await params;
+    const body = await req.json();
+    const { batchId, costPrice, sellingPrice, supplier, batchLocation, expiryDate, notes } = body;
+
+    // Verify the inventory item belongs to the user
+    const inventory = await Inventory.findOne({ _id: productId, userId: user._id });
+    if (!inventory) {
+      return NextResponse.json(
+        { success: false, message: 'Inventory item not found' },
+        { status: 404 }
+      );
+    }
+
+    // Find the batch
+    const batch = await InventoryBatch.findOne({ _id: batchId, productId, userId: user._id });
+    if (!batch) {
+      return NextResponse.json(
+        { success: false, message: 'Batch not found' },
+        { status: 404 }
+      );
+    }
+
+    // Track what fields are being updated
+    const updatedFields = [];
+
+    // Update batch fields if provided
+    if (costPrice !== undefined && costPrice >= 0) {
+      batch.costPrice = costPrice;
+      updatedFields.push('costPrice');
+    }
+    if (sellingPrice !== undefined && sellingPrice >= 0) {
+      batch.sellingPrice = sellingPrice;
+      updatedFields.push('sellingPrice');
+    }
+    if (supplier !== undefined) {
+      batch.supplier = supplier;
+      updatedFields.push('supplier');
+    }
+    if (batchLocation !== undefined) {
+      batch.batchLocation = batchLocation;
+      updatedFields.push('batchLocation');
+    }
+    if (expiryDate !== undefined) {
+      batch.expiryDate = expiryDate;
+      updatedFields.push('expiryDate');
+    }
+    if (notes !== undefined) {
+      batch.notes = notes;
+      updatedFields.push('notes');
+    }
+
+    await batch.save();
+
+    // Track activity
+    try {
+      await ActivityTracker.trackInventoryActivity(user._id, inventory, {
+        activityType: 'batch_update',
+        description: `Updated batch: ${batch.batchCode} (${updatedFields.join(', ')})`,
+        metadata: {
+          batchId: batch._id,
+          batchCode: batch.batchCode,
+          updatedFields,
+          newCostPrice: costPrice,
+          newSellingPrice: sellingPrice,
+          newSupplier: supplier,
+          newBatchLocation: batchLocation
+        }
+      });
+    } catch (activityError) {
+      console.error('Activity tracking failed:', activityError);
+      // Don't fail the operation if activity tracking fails
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Batch updated successfully',
+      data: {
+        batch,
+        updatedFields
+      }
+    });
+
+  } catch (error) {
+    console.error('Batch update error:', error);
     return NextResponse.json(
       { success: false, message: 'Internal server error' },
       { status: 500 }

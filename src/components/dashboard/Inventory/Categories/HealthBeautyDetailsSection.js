@@ -39,17 +39,6 @@ export default function HealthBeautyDetailsSection({
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Brand</label>
-          <input
-            type="text"
-            value={healthBeautyDetails.brand}
-            onChange={(e) => handleCategoryDetailChange('healthBeauty', 'brand', e.target.value)}
-            placeholder="e.g., L'Oréal, Nivea"
-            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent text-black"
-          />
-        </div>
-
-        <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Volume/Size</label>
           <input
             type="text"

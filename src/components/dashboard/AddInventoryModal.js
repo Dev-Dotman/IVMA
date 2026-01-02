@@ -1,6 +1,6 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
-import { X, Package, Tag, DollarSign } from "lucide-react";
+import { X, Package, Tag, DollarSign, ChevronRight, ChevronLeft, Check } from "lucide-react";
 import CustomDropdown from "../ui/CustomDropdown";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -13,6 +13,7 @@ export default function AddInventoryModal({ isOpen, onClose, onSubmit }) {
   const { secureFormDataCall } = useAuth();
   const multiImageInputRef = useRef(null);
   
+  const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState({
     productName: '',
     category: '',
@@ -282,7 +283,6 @@ export default function AddInventoryModal({ isOpen, onClose, onSubmit }) {
     } else if (value === 'Electronics') {
       newFormData.electronicsDetails = {
         productType: '',
-        brand: '',
         model: '',
         specifications: {},
         condition: 'New',
@@ -317,7 +317,6 @@ export default function AddInventoryModal({ isOpen, onClose, onSubmit }) {
       newFormData.sportsDetails = {
         sportType: '',
         productType: '',
-        brand: '',
         sizes: [],
         colors: [],
         material: '',
@@ -328,7 +327,6 @@ export default function AddInventoryModal({ isOpen, onClose, onSubmit }) {
       newFormData.automotiveDetails = {
         productType: '',
         compatibleVehicles: [],
-        brand: '',
         partNumber: '',
         condition: 'New',
         warranty: { hasWarranty: false, duration: '' },
@@ -337,7 +335,6 @@ export default function AddInventoryModal({ isOpen, onClose, onSubmit }) {
     } else if (value === 'Health & Beauty') {
       newFormData.healthBeautyDetails = {
         productType: '',
-        brand: '',
         skinType: [],
         ingredients: [],
         suitableFor: [],
@@ -431,6 +428,55 @@ export default function AddInventoryModal({ isOpen, onClose, onSubmit }) {
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
+  };
+
+  // Validate each step
+  const validateStep = (step) => {
+    const newErrors = {};
+
+    if (step === 1) {
+      if (!formData.productName.trim()) {
+        newErrors.productName = 'Product name is required';
+      }
+      if (!formData.category.trim()) {
+        newErrors.category = 'Category is required';
+      }
+    }
+
+    if (step === 3) {
+      // Skip quantity validation if variants are detected
+      if (detectedColorVariants.length < 2) {
+        if (!formData.quantityInStock || formData.quantityInStock < 0) {
+          newErrors.quantityInStock = 'Valid quantity is required';
+        }
+      }
+      if (!formData.reorderLevel || formData.reorderLevel < 0) {
+        newErrors.reorderLevel = 'Valid reorder level is required';
+      }
+      if (!formData.costPrice || formData.costPrice <= 0) {
+        newErrors.costPrice = 'Valid cost price is required';
+      }
+      if (!formData.sellingPrice || formData.sellingPrice <= 0) {
+        newErrors.sellingPrice = 'Valid selling price is required';
+      }
+      if (parseFloat(formData.sellingPrice) < parseFloat(formData.costPrice)) {
+        newErrors.sellingPrice = 'Selling price should be higher than cost price';
+      }
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleNextStep = () => {
+    if (validateStep(currentStep)) {
+      setCurrentStep(prev => Math.min(prev + 1, 4));
+    }
+  };
+
+  const handlePreviousStep = () => {
+    setCurrentStep(prev => Math.max(prev - 1, 1));
+    setErrors({});
   };
 
   // Handle multiple image upload
@@ -732,7 +778,15 @@ export default function AddInventoryModal({ isOpen, onClose, onSubmit }) {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
+    // Only allow submission if we're on the last step (step 4)
+    if (currentStep !== 4) {
+      return;
+    }
     
     // Ensure stock is synced before validation
     if (detectedColorVariants.length >= 2) {
@@ -802,9 +856,32 @@ export default function AddInventoryModal({ isOpen, onClose, onSubmit }) {
         ? calculateTotalStock() 
         : parseFloat(formData.quantityInStock);
 
+      // Convert warranty object to string for Electronics and Automotive
+      const processedFormData = { ...formData };
+      
+      if (formData.electronicsDetails?.warranty) {
+        const warranty = formData.electronicsDetails.warranty;
+        processedFormData.electronicsDetails = {
+          ...formData.electronicsDetails,
+          warranty: warranty.hasWarranty 
+            ? `${warranty.duration}${warranty.type ? ` (${warranty.type})` : ''}`
+            : ''
+        };
+      }
+      
+      if (formData.automotiveDetails?.warranty) {
+        const warranty = formData.automotiveDetails.warranty;
+        processedFormData.automotiveDetails = {
+          ...formData.automotiveDetails,
+          warranty: warranty.hasWarranty 
+            ? warranty.duration 
+            : ''
+        };
+      }
+
       // Convert form data
       const inventoryData = {
-        ...formData,
+        ...processedFormData,
         costPrice: parseFloat(formData.costPrice),
         sellingPrice: parseFloat(formData.sellingPrice),
         quantityInStock: finalTotalStock,
@@ -832,7 +909,9 @@ export default function AddInventoryModal({ isOpen, onClose, onSubmit }) {
         sellingPrice: '',
         supplier: '',
         location: 'Main Store',
+        qrCode: '',
         notes: '',
+        tags: [],
         hasVariants: false,
         variants: [],
         images: []
@@ -842,6 +921,7 @@ export default function AddInventoryModal({ isOpen, onClose, onSubmit }) {
       setDetectedColorVariants([]);
       setVariants([]);
       setErrors({});
+      setCurrentStep(1);
       onClose();
     } catch (error) {
       setErrors({ submit: error.message || 'Failed to add inventory item' });
@@ -880,9 +960,16 @@ export default function AddInventoryModal({ isOpen, onClose, onSubmit }) {
 
   if (!isOpen) return null;
 
+  const steps = [
+    { number: 1, title: 'Basic Info', description: 'Product details' },
+    { number: 2, title: 'Images & Variants', description: 'Photos & options' },
+    { number: 3, title: 'Stock & Pricing', description: 'Inventory & money' },
+    { number: 4, title: 'Additional Details', description: 'Extra info' }
+  ];
+
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
+      <div className="bg-white rounded-2xl w-[75vw] max-h-[95vh] overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div className="flex items-center space-x-3">
@@ -891,7 +978,7 @@ export default function AddInventoryModal({ isOpen, onClose, onSubmit }) {
             </div>
             <div>
               <h2 className="text-xl font-semibold text-gray-900">Add New Product</h2>
-              <p className="text-sm text-gray-500">Add a new item to your inventory</p>
+              <p className="text-sm text-gray-500">Step {currentStep} of 4: {steps[currentStep - 1].title}</p>
             </div>
           </div>
           <button
@@ -902,8 +989,51 @@ export default function AddInventoryModal({ isOpen, onClose, onSubmit }) {
           </button>
         </div>
 
+        {/* Progress Steps */}
+        <div className="px-6 pt-6">
+          <div className="flex items-center justify-between">
+            {steps.map((step, index) => (
+              <div key={step.number} className="flex items-center flex-1">
+                <div className="flex flex-col items-center flex-1">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-medium transition-colors ${
+                    currentStep > step.number
+                      ? 'bg-teal-600 text-white'
+                      : currentStep === step.number
+                      ? 'bg-teal-600 text-white ring-4 ring-teal-100'
+                      : 'bg-gray-200 text-gray-500'
+                  }`}>
+                    {currentStep > step.number ? <Check className="w-5 h-5" /> : step.number}
+                  </div>
+                  <div className="mt-2 text-center">
+                    <p className={`text-sm font-medium ${
+                      currentStep === step.number ? 'text-teal-600' : 'text-gray-500'
+                    }`}>
+                      {step.title}
+                    </p>
+                    <p className="text-xs text-gray-400">{step.description}</p>
+                  </div>
+                </div>
+                {index < steps.length - 1 && (
+                  <div className={`h-0.5 flex-1 mx-2 mb-8 ${
+                    currentStep > step.number ? 'bg-teal-600' : 'bg-gray-200'
+                  }`} />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+        <form onSubmit={(e) => {
+          e.preventDefault();
+          // Don't do anything - only the explicit button click will trigger submission
+        }} onKeyDown={(e) => {
+          // Prevent Enter key from submitting the form
+          if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }} className="p-6 overflow-y-auto max-h-[calc(95vh-280px)]">
           {errors.submit && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
               <p className="text-red-600 text-sm">{errors.submit}</p>
@@ -911,7 +1041,9 @@ export default function AddInventoryModal({ isOpen, onClose, onSubmit }) {
           )}
 
           <div className="space-y-8">
-            {/* Product Information Section */}
+            {/* STEP 1: Product Information Section */}
+            {currentStep === 1 && (
+            <>
             <div>
               <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
                 <Tag className="w-5 h-5 mr-2 text-gray-600" />
@@ -988,6 +1120,28 @@ export default function AddInventoryModal({ isOpen, onClose, onSubmit }) {
               </div>
             </div>
 
+            {/* Category Details - Now Modular */}
+            <CategoryDetailsRenderer
+              category={formData.category}
+              formData={formData}
+              handleCategoryDetailChange={handleCategoryDetailChange}
+              handleArrayFieldChange={handleArrayFieldChange}
+              removeArrayItem={removeArrayItem}
+              selectedStateForCity={selectedStateForCity}
+              setSelectedStateForCity={setSelectedStateForCity}
+              addDeliveryState={addDeliveryState}
+              removeDeliveryState={removeDeliveryState}
+              toggleCoverAllCitiesInState={toggleCoverAllCitiesInState}
+              addCityToDeliveryState={addCityToDeliveryState}
+              removeCityFromDeliveryState={removeCityFromDeliveryState}
+              detectedColorVariants={detectedColorVariants}
+            />
+            </>
+            )}
+
+            {/* STEP 2: Images & Variants */}
+            {currentStep === 2 && (
+            <>
             {/* Image Upload Section - Now Modular */}
             <ImageUploadSection
               hasVariants={formData.hasVariants}
@@ -1016,48 +1170,12 @@ export default function AddInventoryModal({ isOpen, onClose, onSubmit }) {
                 syncStockToForm={syncStockToForm}
               />
             )}
+            </>
+            )}
 
-            {/* Category Details - Now Modular */}
-            <CategoryDetailsRenderer
-              category={formData.category}
-              formData={formData}
-              handleCategoryDetailChange={handleCategoryDetailChange}
-              handleArrayFieldChange={handleArrayFieldChange}
-              removeArrayItem={removeArrayItem}
-              selectedStateForCity={selectedStateForCity}
-              setSelectedStateForCity={setSelectedStateForCity}
-              addDeliveryState={addDeliveryState}
-              removeDeliveryState={removeDeliveryState}
-              toggleCoverAllCitiesInState={toggleCoverAllCitiesInState}
-              addCityToDeliveryState={addCityToDeliveryState}
-              removeCityFromDeliveryState={removeCityFromDeliveryState}
-              detectedColorVariants={detectedColorVariants}
-            />
-
-            {/* Tags Section */}
-            <div>
-              <h3 className="text-lg font-medium text-gray-900 mb-4">
-                Tags (optional)
-              </h3>
-              <p className="text-sm text-gray-500 mb-3">Help customers find your product easier</p>
-              <div className="flex flex-wrap gap-2">
-                {tagOptions.map(tag => (
-                  <button
-                    key={tag.value}
-                    type="button"
-                    onClick={() => toggleTag(tag.value)}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      formData.tags.includes(tag.value)
-                        ? 'bg-teal-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    {tag.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
+            {/* STEP 3: Stock & Pricing */}
+            {currentStep === 3 && (
+            <>
             {/* Stock Information */}
             <div>
               <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
@@ -1268,6 +1386,35 @@ export default function AddInventoryModal({ isOpen, onClose, onSubmit }) {
                 )}
               </div>
             </div>
+            </>
+            )}
+
+            {/* STEP 4: Additional Information & Tags */}
+            {currentStep === 4 && (
+            <>
+            {/* Tags Section */}
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-4">
+                Tags (optional)
+              </h3>
+              <p className="text-sm text-gray-500 mb-3">Help customers find your product easier</p>
+              <div className="flex flex-wrap gap-2">
+                {tagOptions.map(tag => (
+                  <button
+                    key={tag.value}
+                    type="button"
+                    onClick={() => toggleTag(tag.value)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      formData.tags.includes(tag.value)
+                        ? 'bg-teal-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {tag.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             {/* Additional Information */}
             <div>
@@ -1337,10 +1484,12 @@ export default function AddInventoryModal({ isOpen, onClose, onSubmit }) {
                 </div>
               </div>
             </div>
+            </>
+            )}
           </div>
 
-          {/* Footer */}
-          <div className="flex items-center justify-end space-x-4 pt-6 border-t border-gray-200 mt-8">
+          {/* Navigation Footer */}
+          <div className="flex items-center justify-between pt-6 border-t border-gray-200 mt-8">
             <button
               type="button"
               onClick={onClose}
@@ -1348,23 +1497,52 @@ export default function AddInventoryModal({ isOpen, onClose, onSubmit }) {
             >
               Cancel
             </button>
-            <button
-              type="submit"
-              disabled={isSubmitting || isUploadingImage}
-              className="px-6 py-3 bg-teal-600 text-white rounded-xl hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center"
-            >
-              {isSubmitting || isUploadingImage ? (
-                <>
-                  <svg className="animate-spin -ml-1 mr-3 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  {isUploadingImage ? 'Uploading Image...' : 'Adding Product...'}
-                </>
-              ) : (
-                'Add Product'
+            
+            <div className="flex items-center space-x-4">
+              {currentStep > 1 && (
+                <button
+                  type="button"
+                  onClick={handlePreviousStep}
+                  className="px-6 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors flex items-center"
+                >
+                  <ChevronLeft className="w-4 h-4 mr-1" />
+                  Previous
+                </button>
               )}
-            </button>
+              
+              {currentStep < 4 ? (
+                <button
+                  type="button"
+                  onClick={handleNextStep}
+                  className="px-6 py-3 bg-teal-600 text-white rounded-xl hover:bg-teal-700 transition-colors flex items-center"
+                >
+                  Next
+                  <ChevronRight className="w-4 h-4 ml-1" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={isSubmitting || isUploadingImage}
+                  className="px-6 py-3 bg-teal-600 text-white rounded-xl hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center"
+                >
+                  {isSubmitting || isUploadingImage ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-3 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      {isUploadingImage ? 'Uploading Image...' : 'Adding Product...'}
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4 mr-2" />
+                      Add Product
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
           </div>
         </form>
       </div>

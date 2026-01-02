@@ -148,6 +148,29 @@ export function useInventoryData() {
     },
   });
 
+  // Delete inventory item mutation
+  const deleteItemMutation = useMutation({
+    mutationFn: async ({ itemId, reason = 'No reason provided' }) => {
+      const response = await secureApiCall(`/api/inventory/${itemId}/delete?reason=${encodeURIComponent(reason)}`, {
+        method: 'DELETE'
+      });
+      
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to delete item');
+      }
+      
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory-stats-page'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory-stats'] }); // Also invalidate dashboard
+    },
+    onError: (error) => {
+      console.error('Delete item mutation error:', error);
+    },
+  });
+
   // Extract data with guaranteed safe defaults and validation
   const inventoryData = inventoryQuery.data || [];
   const stats = statsQuery.data ? {
@@ -191,15 +214,18 @@ export function useInventoryData() {
     addItem: addItemMutation.mutateAsync,
     editItem: editItemMutation.mutateAsync,
     updateStock: updateStockMutation.mutateAsync,
+    deleteItem: deleteItemMutation.mutateAsync,
     
     // Mutation states
     isAddingItem: addItemMutation.isPending,
     isEditingItem: editItemMutation.isPending,
     isUpdatingStock: updateStockMutation.isPending,
+    isDeletingItem: deleteItemMutation.isPending,
     
     // Mutation errors
     addItemError: addItemMutation.error,
     editItemError: editItemMutation.error,
     updateStockError: updateStockMutation.error,
+    deleteItemError: deleteItemMutation.error,
   };
 }

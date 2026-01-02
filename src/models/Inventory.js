@@ -735,6 +735,28 @@ const inventorySchema = new mongoose.Schema({
       'Clearance', 'Sale', 'Hot deal', 'Trending', 'Featured'
     ]
   }],
+
+  // Soft delete fields
+  isDeleted: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
+  deletedAt: {
+    type: Date,
+    default: null
+  },
+  deletedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  deletionReason: {
+    type: String,
+    trim: true,
+    maxlength: [500, 'Deletion reason cannot exceed 500 characters'],
+    default: ''
+  }
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
@@ -1046,7 +1068,7 @@ inventorySchema.statics.getInventoryByUser = function(userId, options = {}) {
     search = null 
   } = options;
 
-  const query = { userId };
+  const query = { userId, isDeleted: false }; // Exclude deleted items
   
   if (category) query.category = category;
   if (status) query.status = status;

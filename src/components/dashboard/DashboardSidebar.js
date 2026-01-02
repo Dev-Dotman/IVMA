@@ -23,7 +23,7 @@ export default function DashboardSidebar() {
   const menuItems = [
     { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard/overview' },
     { name: 'Catalogue', icon: Package, path: '/dashboard/inventory' },
-    { name: 'Services', icon: Wrench, path: '/dashboard/services' }, // Add services menu item
+    // { name: 'Services', icon: Wrench, path: '/dashboard/services' }, // Add services menu item
     { name: 'Store', icon: Store, path: '/dashboard/store' },
     { name: 'Sales Terminal (POS)', icon: CreditCard, path: '/dashboard/pos' },
     { name: 'Website', icon: Globe, path: '/dashboard/website' },

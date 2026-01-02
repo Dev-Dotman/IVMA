@@ -156,7 +156,7 @@ const inventoryBatchSchema = new mongoose.Schema({
   // Status tracking
   status: {
     type: String,
-    enum: ['active', 'depleted', 'expired', 'damaged'],
+    enum: ['active', 'depleted', 'expired', 'damaged', 'archived'],
     default: 'active',
     index: true
   },
@@ -167,6 +167,12 @@ const inventoryBatchSchema = new mongoose.Schema({
     trim: true,
     maxlength: [100, 'Location cannot exceed 100 characters'],
     default: ''
+  },
+
+  // Archive tracking
+  archivedAt: {
+    type: Date,
+    default: null
   }
 }, {
   timestamps: true,

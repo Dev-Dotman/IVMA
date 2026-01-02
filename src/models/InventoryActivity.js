@@ -27,7 +27,8 @@ const inventoryActivitySchema = new mongoose.Schema({
       'deleted',
       'image_updated',
       'category_changed',
-      'location_changed'
+      'location_changed',
+      'batch_update'
     ],
     required: [true, 'Activity type is required']
   },

@@ -57,10 +57,14 @@ export default function InventoryDetailPage() {
   // Fetch batches for this item
   const fetchItemBatches = async () => {
     try {
-      const response = await secureApiCall(`/api/inventory/${id}/batches`);
+      // Add timestamp to prevent caching
+      const timestamp = new Date().getTime();
+      const response = await secureApiCall(`/api/inventory/${id}/batches?_t=${timestamp}`);
       if (response.success) {
+        console.log('Fetched batches:', response.data.batches);
         setAllBatches(response.data.batches);
         setActiveBatches(response.data.batches.filter(batch => batch.status === 'active'));
+        console.log('Active batches set:', response.data.batches.filter(batch => batch.status === 'active'));
       }
     } catch (error) {
       console.error('Error fetching batches:', error);
@@ -132,9 +136,59 @@ export default function InventoryDetailPage() {
       });
 
       if (response.success) {
-        // Refresh the item details after successful update
-        await fetchItemDetails();
-        setIsEditModalOpen(false); // Close modal after refresh
+        console.log('Item updated successfully, updating local state...');
+        
+        // Immediately update the item state with new data for instant feedback
+        setItem(prev => ({
+          ...prev,
+          ...itemData,
+          lastUpdated: new Date().toISOString()
+        }));
+        
+        // If price, supplier, or location changed, update the active batch state too
+        const priceChanged = itemData.costPrice !== item.costPrice || itemData.sellingPrice !== item.sellingPrice;
+        const supplierChanged = itemData.supplier !== item.supplier;
+        const locationChanged = itemData.location !== item.location;
+        
+        if (priceChanged || supplierChanged || locationChanged) {
+          // Update active batches with new prices/info
+          setAllBatches(prev => prev.map(batch => {
+            // Only update the oldest active batch (FIFO)
+            const isOldestActive = batch.status === 'active' && 
+              batch.quantityRemaining > 0 && 
+              batch._id === activeBatches.sort((a, b) => new Date(a.dateReceived) - new Date(b.dateReceived))[0]?._id;
+            
+            if (isOldestActive) {
+              return {
+                ...batch,
+                costPrice: itemData.costPrice !== undefined ? parseFloat(itemData.costPrice) : batch.costPrice,
+                sellingPrice: itemData.sellingPrice !== undefined ? parseFloat(itemData.sellingPrice) : batch.sellingPrice,
+                supplier: itemData.supplier || batch.supplier,
+                batchLocation: itemData.location || batch.batchLocation
+              };
+            }
+            return batch;
+          }));
+          
+          setActiveBatches(prev => prev.map(batch => {
+            const isOldestActive = batch.quantityRemaining > 0 && 
+              batch._id === activeBatches.sort((a, b) => new Date(a.dateReceived) - new Date(b.dateReceived))[0]?._id;
+            
+            if (isOldestActive) {
+              return {
+                ...batch,
+                costPrice: itemData.costPrice !== undefined ? parseFloat(itemData.costPrice) : batch.costPrice,
+                sellingPrice: itemData.sellingPrice !== undefined ? parseFloat(itemData.sellingPrice) : batch.sellingPrice,
+                supplier: itemData.supplier || batch.supplier,
+                batchLocation: itemData.location || batch.batchLocation
+              };
+            }
+            return batch;
+          }));
+        }
+        
+        console.log('Local state updated with new data');
+        setIsEditModalOpen(false);
         return response;
       } else {
         throw new Error(response.message || 'Failed to update item');

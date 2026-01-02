@@ -95,12 +95,12 @@ export default function InventoryVariantsSection({ item, formatCurrency }) {
 
               {/* Sizes for this color */}
               <div className="divide-y divide-gray-100 max-h-96 overflow-y-auto">
-                {variants.map((variant) => (
-                  <div key={variant._id} className="bg-white">
+                {variants.map((variant, variantIndex) => (
+                  <div key={variant._id || `${color}-${variant.size}-${variantIndex}`} className="bg-white">
                     {/* Variant Row */}
                     <button
                       type="button"
-                      onClick={() => toggleVariantExpanded(variant._id)}
+                      onClick={() => toggleVariantExpanded(variant._id || `${color}-${variant.size}-${variantIndex}`)}
                       className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
                     >
                       <div className="flex items-center space-x-4 flex-1">
@@ -146,7 +146,7 @@ export default function InventoryVariantsSection({ item, formatCurrency }) {
                         {variant.quantityInStock <= variant.reorderLevel && variant.quantityInStock > 0 && (
                           <AlertCircle className="w-4 h-4 text-amber-500" />
                         )}
-                        {expandedVariants[variant._id] ? (
+                        {expandedVariants[variant._id || `${color}-${variant.size}-${variantIndex}`] ? (
                           <ChevronUp className="w-4 h-4 text-gray-400" />
                         ) : (
                           <ChevronDown className="w-4 h-4 text-gray-400" />
@@ -155,7 +155,7 @@ export default function InventoryVariantsSection({ item, formatCurrency }) {
                     </button>
 
                     {/* Expanded Details */}
-                    {expandedVariants[variant._id] && (
+                    {expandedVariants[variant._id || `${color}-${variant.size}-${variantIndex}`] && (
                       <div className="px-4 pb-4 bg-gray-50/50">
                         <div className="grid grid-cols-2 gap-4 pt-3">
                           {/* Reorder Level */}
@@ -201,7 +201,7 @@ export default function InventoryVariantsSection({ item, formatCurrency }) {
                             <div className="flex flex-wrap gap-2">
                               {variant.images.slice(0, 4).map((imageUrl, idx) => (
                                 <div 
-                                  key={idx}
+                                  key={`${variant._id || `${color}-${variant.size}`}-img-${idx}`}
                                   className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100 border border-gray-200"
                                 >
                                   <img

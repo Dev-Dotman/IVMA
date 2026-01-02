@@ -38,8 +38,8 @@ export async function GET(req) {
       search
     });
 
-    // Get total count for pagination
-    const totalQuery = { userId: user._id };
+    // Get total count for pagination (exclude deleted items)
+    const totalQuery = { userId: user._id, isDeleted: false };
     if (category) totalQuery.category = category;
     if (status) totalQuery.status = status;
     if (search) {
