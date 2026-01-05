@@ -129,11 +129,12 @@ export function useDashboardData() {
         queryKey: ['pending-orders'],
         queryFn: async () => {
           try {
-            const response = await secureApiCall('/api/orders?status=pending,confirmed&limit=7&sortBy=createdAt&sortOrder=desc');
-            if (response.success) {
+            const response = await secureApiCall('/api/orders?status=pending&limit=7&sortBy=createdAt&sortOrder=desc');
+            console.log('Pending orders response:', response); // Debug log
+            if (response.success && response.data) {
               return {
-                orders: Array.isArray(response.data?.orders) ? response.data.orders : [],
-                total: Number(response.total) || 0
+                orders: Array.isArray(response.data.orders) ? response.data.orders : [],
+                total: Number(response.data.pagination?.total) || 0
               };
             }
             return { orders: [], total: 0 };
@@ -155,7 +156,8 @@ export function useDashboardData() {
             const today = new Date();
             const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
             const response = await secureApiCall(`/api/orders?createdFrom=${startOfDay}&limit=1`);
-            return Number(response.total) || 0;
+            console.log('Today orders response:', response); // Debug log
+            return Number(response.data?.pagination?.total) || 0;
           } catch (error) {
             console.error('Today orders error:', error);
             return 0;

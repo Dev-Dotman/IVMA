@@ -28,7 +28,13 @@ export async function GET(req) {
     };
 
     if (status) {
-      query.status = status;
+      // Handle comma-separated status values (e.g., "pending,confirmed")
+      if (status.includes(',')) {
+        const statusArray = status.split(',').map(s => s.trim());
+        query.status = { $in: statusArray };
+      } else {
+        query.status = status;
+      }
     }
 
     if (paymentStatus) {

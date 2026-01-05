@@ -19,6 +19,7 @@ export default function DashboardSidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const [activeTab, setActiveTab] = useState('');
+  const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
 
   const menuItems = [
     { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard/overview' },
@@ -48,6 +49,28 @@ export default function DashboardSidebar() {
     }
   }, [pathname]);
 
+  // Fetch pending orders count
+  useEffect(() => {
+    const fetchPendingOrders = async () => {
+      try {
+        const response = await fetch('/api/orders/stats');
+        if (response.ok) {
+          const data = await response.json();
+          setPendingOrdersCount(data.stats?.pendingOrders || 0);
+        }
+      } catch (error) {
+        console.error('Error fetching pending orders:', error);
+      }
+    };
+
+    fetchPendingOrders();
+    
+    // Refresh count every 30 seconds
+    const interval = setInterval(fetchPendingOrders, 30000);
+    
+    return () => clearInterval(interval);
+  }, []);
+
   const handleNavigation = (item) => {
     // Immediately update the active state to prevent flicker
     setActiveTab(item.name);
@@ -74,19 +97,27 @@ export default function DashboardSidebar() {
           {menuItems.map((item) => {
             const IconComponent = item.icon;
             const isActive = activeTab === item.name;
+            const showBadge = item.name === 'Orders' && pendingOrdersCount > 0;
             
             return (
               <button
                 key={item.name}
                 onClick={() => handleNavigation(item)}
-                className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200 ${
+                className={`w-full flex items-center justify-between px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200 ${
                   isActive
                     ? 'bg-teal-600 text-white shadow-lg'
                     : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                 }`}
               >
-                <IconComponent className={`mr-3 h-5 w-5 ${isActive ? 'text-white' : 'text-gray-500'}`} />
-                {item.name}
+                <div className="flex items-center">
+                  <IconComponent className={`mr-3 h-5 w-5 ${isActive ? 'text-white' : 'text-gray-500'}`} />
+                  {item.name}
+                </div>
+                {showBadge && (
+                  <span className="flex items-center justify-center min-w-[24px] h-6 px-2 bg-red-500 text-white text-xs font-bold rounded-full">
+                    {pendingOrdersCount}
+                  </span>
+                )}
               </button>
             );
           })}
