@@ -19,14 +19,40 @@ export default function VariantManager({
 
   // Initialize variants when colors are detected - moved to useEffect
   useEffect(() => {
-    if (detectedColors.length >= 2 && variants.length === 0) {
-      const initialVariants = detectedColors.map(color => ({
-        color: color,
-        sizes: []
-      }));
-      setVariants(initialVariants);
+    if (detectedColors.length >= 2) {
+      // Get existing variant colors to preserve their data
+      const existingVariantMap = new Map(
+        variants.map(v => [v.color, v])
+      );
+      
+      // Create/update variants for all detected colors
+      const updatedVariants = detectedColors.map(color => {
+        // If variant already exists for this color, keep its data
+        if (existingVariantMap.has(color)) {
+          return existingVariantMap.get(color);
+        }
+        // Otherwise create new variant with empty sizes
+        return {
+          color: color,
+          sizes: []
+        };
+      });
+      
+      // Remove variants for colors that are no longer detected
+      const filteredVariants = updatedVariants.filter(v => 
+        detectedColors.includes(v.color)
+      );
+      
+      // Only update if there's an actual change
+      const hasChanged = 
+        filteredVariants.length !== variants.length ||
+        filteredVariants.some((v, i) => v.color !== variants[i]?.color);
+      
+      if (hasChanged) {
+        setVariants(filteredVariants);
+      }
     }
-  }, [detectedColors, variants.length, setVariants]);
+  }, [detectedColors, variants, setVariants]);
 
   // Add useEffect to sync stock whenever variants change
   useEffect(() => {
